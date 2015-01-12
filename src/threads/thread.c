@@ -28,6 +28,9 @@ static struct list ready_list;
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
 
+/* List of sleeping processes, needs to be waken up after certain ticks */
+static struct list sleep_list;
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -91,6 +94,7 @@ thread_init (void)
 
   lock_init (&tid_lock);
   list_init (&ready_list);
+  list_init (&sleep_list);
   list_init (&all_list);
 
   /* Set up a thread structure for the running thread. */
@@ -117,6 +121,25 @@ thread_start (void)
   sema_down (&idle_started);
 }
 
+bool priority_less_than (const struct list_elem *a, const struct list_elem *b,
+    void *aux UNUSED)
+{
+  struct thread *thread_a, *thread_b;
+  thread_a =list_entry (a, struct thread, elem);
+  thread_b =list_entry (b, struct thread, elem);
+  return thread_a->priority < thread_b->priority;
+
+}
+
+bool priority_higher_than (const struct list_elem *a, const struct list_elem *b,
+    void *aux UNUSED)
+{
+  struct thread *thread_a, *thread_b;
+  thread_a =list_entry (a, struct thread, elem);
+  thread_b =list_entry (b, struct thread, elem);
+  return thread_a->priority >= thread_b->priority;
+}
+
 /* Called by the timer interrupt handler at each timer tick.
    Thus, this function runs in an external interrupt context. */
 void
@@ -134,9 +157,43 @@ thread_tick (void)
   else
     kernel_ticks++;
 
+  // iterate through the sleep list, decrement the ticks, take out elements
+  // with sleep_tics equal to zero, put them on front on the ready list
+  struct list_elem *e;
+  for (e = list_begin (&sleep_list); e != list_end (&sleep_list);)
+    {
+      struct thread *sleeping_thread = list_entry (e, struct thread, elem);
+      sleeping_thread->sleep_ticks--;
+      if (sleeping_thread->sleep_ticks == 0)
+        {
+          e = list_remove (e);
+/*
+          list_push_front (&ready_list, &sleeping_thread->elem);
+          list_sort(&ready_list, &priority_less_than, NULL);
+          sleeping_thread->status = THREAD_READY;
+*/
+          thread_unblock(sleeping_thread);
+        }
+      else
+        {
+          e = list_next (e);
+        }
+    }
+
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
+}
+
+void
+thread_sleep (int64_t ticks)
+{
+  enum intr_level old_level = intr_disable ();
+  struct thread *t = thread_current ();
+  list_push_back(&sleep_list, &t->elem);
+  t->sleep_ticks = ticks;
+  thread_block();
+  intr_set_level (old_level);
 }
 
 /* Prints thread statistics. */
@@ -463,6 +520,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->sleep_ticks =  0;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -493,7 +551,10 @@ next_thread_to_run (void)
   if (list_empty (&ready_list))
     return idle_thread;
   else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+    {
+      list_sort(&ready_list, &priority_less_than, NULL);
+      return list_entry (list_pop_back (&ready_list), struct thread, elem);
+    }
 }
 
 /* Completes a thread switch by activating the new thread's page
