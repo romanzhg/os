@@ -167,11 +167,6 @@ thread_tick (void)
       if (sleeping_thread->sleep_ticks == 0)
         {
           e = list_remove (e);
-/*
-          list_push_front (&ready_list, &sleeping_thread->elem);
-          list_sort(&ready_list, &priority_less_than, NULL);
-          sleeping_thread->status = THREAD_READY;
-*/
           thread_unblock(sleeping_thread);
         }
       else
@@ -552,8 +547,9 @@ next_thread_to_run (void)
     return idle_thread;
   else
     {
-      list_sort(&ready_list, &priority_less_than, NULL);
-      return list_entry (list_pop_back (&ready_list), struct thread, elem);
+      struct list_elem * highest_priority = list_max (&ready_list, &priority_less_than, NULL);
+      list_remove (highest_priority);
+      return list_entry (highest_priority, struct thread, elem);
     }
 }
 
