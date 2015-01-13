@@ -128,16 +128,6 @@ bool priority_less_than (const struct list_elem *a, const struct list_elem *b,
   thread_a =list_entry (a, struct thread, elem);
   thread_b =list_entry (b, struct thread, elem);
   return thread_a->priority < thread_b->priority;
-
-}
-
-bool priority_higher_than (const struct list_elem *a, const struct list_elem *b,
-    void *aux UNUSED)
-{
-  struct thread *thread_a, *thread_b;
-  thread_a =list_entry (a, struct thread, elem);
-  thread_b =list_entry (b, struct thread, elem);
-  return thread_a->priority >= thread_b->priority;
 }
 
 /* Called by the timer interrupt handler at each timer tick.

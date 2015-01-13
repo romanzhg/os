@@ -93,6 +93,7 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
+    /* Remaining number of ticks to sleep. */
     int64_t sleep_ticks;
 
 #ifdef USERPROG
@@ -142,6 +143,5 @@ int thread_get_load_avg (void);
 
 void thread_sleep(int64_t ticks);
 list_less_func priority_less_than;
-list_less_func priority_higher_than;
 
 #endif /* threads/thread.h */
