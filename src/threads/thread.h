@@ -24,6 +24,12 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+struct effective_priority
+  {
+    int value;
+    struct lock *blocked_on;
+    struct list_elem elem;
+  };
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -96,6 +102,10 @@ struct thread
     /* Remaining number of ticks to sleep. */
     int64_t sleep_ticks;
 
+    /* Effective priority array */
+    struct list donated_priority;
+    struct thread* donated_to;
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
@@ -134,6 +144,7 @@ typedef void thread_action_func (struct thread *t, void *aux);
 void thread_foreach (thread_action_func *, void *);
 
 int thread_get_priority (void);
+int get_priority(struct thread *t);
 void thread_set_priority (int);
 
 int thread_get_nice (void);
@@ -143,5 +154,9 @@ int thread_get_load_avg (void);
 
 void thread_sleep(int64_t ticks);
 list_less_func priority_less_than;
+
+void donate_priority(struct thread *t, struct lock *blocked_on, int priority);
+void remove_priority (struct thread *t, struct lock *blocked_on);
+
 
 #endif /* threads/thread.h */

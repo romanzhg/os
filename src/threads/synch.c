@@ -112,12 +112,28 @@ sema_up (struct semaphore *sema)
 
   ASSERT (sema != NULL);
 
+/*
   old_level = intr_disable ();
   if (!list_empty (&sema->waiters)) 
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                struct thread, elem));
+    {
+      struct list_elem * highest_priority = list_max (&sema->waiters, &priority_less_than, NULL);
+      list_remove (highest_priority);
+      thread_unblock (list_entry (highest_priority, struct thread, elem));
+    }
   sema->value++;
   intr_set_level (old_level);
+*/
+  struct list_elem * highest_priority = NULL;
+  old_level = intr_disable ();
+  if (!list_empty (&sema->waiters)) 
+    {
+      highest_priority = list_max (&sema->waiters, &priority_less_than, NULL);
+      list_remove (highest_priority);
+    }
+  sema->value++;
+  intr_set_level (old_level);
+  if (highest_priority != NULL)
+    thread_unblock (list_entry (highest_priority, struct thread, elem));
 }
 
 static void sema_test_helper (void *sema_);
@@ -196,6 +212,7 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  donate_priority (lock->holder, lock, thread_get_priority());
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
 }
@@ -232,6 +249,7 @@ lock_release (struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
 
   lock->holder = NULL;
+  remove_priority(thread_current(), lock);
   sema_up (&lock->semaphore);
 }
 

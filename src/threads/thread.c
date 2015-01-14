@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -127,7 +128,7 @@ bool priority_less_than (const struct list_elem *a, const struct list_elem *b,
   struct thread *thread_a, *thread_b;
   thread_a =list_entry (a, struct thread, elem);
   thread_b =list_entry (b, struct thread, elem);
-  return thread_a->priority < thread_b->priority;
+  return get_priority(thread_a) < get_priority(thread_b);
 }
 
 /* Called by the timer interrupt handler at each timer tick.
@@ -157,7 +158,7 @@ thread_tick (void)
       if (sleeping_thread->sleep_ticks == 0)
         {
           e = list_remove (e);
-          thread_unblock(sleeping_thread);
+          thread_unblock (sleeping_thread);
         }
       else
         {
@@ -282,6 +283,13 @@ thread_unblock (struct thread *t)
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
   intr_set_level (old_level);
+
+  // if interrupt is enabled, see wheather need to swith to a
+  // new thread
+  if (intr_get_level () == INTR_ON)
+    {
+      thread_yield();
+    }
 }
 
 /* Returns the name of the running thread. */
@@ -377,14 +385,77 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  // may need to handle the case that thread_get_priority is higher than the actual priority
+  if (new_priority < thread_get_priority())
+    {
+      thread_current ()->priority = new_priority;
+      thread_yield();
+    }
+  else
+    {
+      thread_current ()->priority = new_priority;
+    }
 }
 
 /* Returns the current thread's priority. */
 int
 thread_get_priority (void) 
 {
-  return thread_current ()->priority;
+  struct thread *cur = thread_current ();
+  if (list_empty (&cur->donated_priority))
+    return cur->priority;
+  else
+    return list_entry (list_rbegin (&cur->donated_priority), struct effective_priority, elem)->value;
+}
+
+/* Set priority for a perticular thread. */
+int
+get_priority(struct thread *t)
+{
+  if (list_empty (&t->donated_priority))
+    return t->priority;
+  else
+    return list_entry (list_rbegin (&t->donated_priority), struct effective_priority, elem)->value;
+}
+
+void
+remove_priority (struct thread *t, struct lock *blocked_on)
+{
+  if (list_empty (&t->donated_priority))
+    return;
+  else
+    {
+      if (list_entry (list_rbegin (&t->donated_priority), struct effective_priority, elem)->blocked_on == blocked_on)
+        list_pop_back(&t->donated_priority);
+    }
+}
+
+/* Donate priority to some other thread */
+void
+donate_priority (struct thread *t, struct lock *blocked_on, int priority)
+{
+  if (t == NULL)
+    return;
+  // no nested donation for more than 8 levels
+  if (list_size(&t->donated_priority) == 8)
+    return;
+  
+  if (priority <= get_priority(t))
+    return;
+
+  if(list_entry (list_rbegin (&t->donated_priority), struct effective_priority, elem)->blocked_on == blocked_on)
+    {
+      list_entry (list_rbegin (&t->donated_priority), struct effective_priority, elem) -> value = priority;
+    }
+  else
+    {
+      struct effective_priority *tmp = (struct effective_priority*) malloc (sizeof(struct effective_priority));
+      tmp->value = priority;
+      tmp->blocked_on = blocked_on;
+      list_push_back(&t->donated_priority, &tmp->elem);
+    }
+//  if (t->status == THREAD_BLOCKED)
+//    thread_unblock(t);
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -506,6 +577,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
   t->sleep_ticks =  0;
+  list_init (&t->donated_priority);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
