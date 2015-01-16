@@ -28,7 +28,14 @@ struct effective_priority
   {
     int value;
     struct lock *blocked_on;
+    struct thread *donated_from;
     struct list_elem elem;
+  };
+
+struct donate_to
+  {
+    struct thread *recipient;
+    struct lock *blocked_on;
   };
 /* A kernel thread or user process.
 
@@ -104,7 +111,7 @@ struct thread
 
     /* Effective priority array */
     struct list donated_priority;
-    struct thread* donated_to;
+    struct donate_to *donated_to;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -155,8 +162,9 @@ int thread_get_load_avg (void);
 void thread_sleep(int64_t ticks);
 list_less_func priority_less_than;
 
-void donate_priority(struct thread *t, struct lock *blocked_on, int priority);
+void donate_priority(struct thread *donor, struct thread *recipient, struct lock *blocked_on, int priority);
 void remove_priority (struct thread *t, struct lock *blocked_on);
 
+void maybe_yield(void);
 
 #endif /* threads/thread.h */
