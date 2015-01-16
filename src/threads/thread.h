@@ -111,7 +111,7 @@ struct thread
 
     /* Effective priority array */
     struct list donated_priority;
-    struct donate_to *donated_to;
+    struct donate_to donated_to;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -164,7 +164,5 @@ list_less_func priority_less_than;
 
 void donate_priority(struct thread *donor, struct thread *recipient, struct lock *blocked_on, int priority);
 void remove_priority (struct thread *t, struct lock *blocked_on);
-
-void maybe_yield(void);
 
 #endif /* threads/thread.h */

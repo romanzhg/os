@@ -401,11 +401,7 @@ thread_set_priority (int new_priority)
 int
 thread_get_priority (void) 
 {
-  struct thread *cur = thread_current ();
-  if (list_empty (&cur->donated_priority))
-    return cur->priority;
-  else
-    return list_entry (list_rbegin (&cur->donated_priority), struct effective_priority, elem)->value;
+  return get_priority(thread_current ());
 }
 
 /* Set priority for a perticular thread. */
@@ -415,30 +411,41 @@ get_priority(struct thread *t)
   if (list_empty (&t->donated_priority))
     return t->priority;
   else
-    return list_entry (list_rbegin (&t->donated_priority), struct effective_priority, elem)->value;
+    {
+      //enum intr_level old_level;
+      //old_level = intr_disable ();
+      int priority = list_entry (list_rbegin (&t->donated_priority), struct effective_priority, elem)->value;
+      //intr_set_level (old_level);
+      return priority;
+    }
 }
 
 void
 remove_priority (struct thread *t, struct lock *blocked_on)
 {
+  // when uncomment this the kernel would hang, why?
   if (list_empty (&t->donated_priority))
     return;
   else
     {
-      struct list_elem *e;
-      for (e = list_begin (&t->donated_priority); e != list_end (&t->donated_priority);)
+      struct list_elem *entry;
+      for (entry = list_begin (&t->donated_priority); entry != list_end (&t->donated_priority);)
         {
-          struct effective_priority * tmp = list_entry (e, struct effective_priority, elem);
-          if (tmp -> blocked_on == blocked_on)
+          struct effective_priority * tmp = list_entry (entry, struct effective_priority, elem);
+          if (tmp->blocked_on == blocked_on)
             {
-              e = list_remove (e);
-              free (tmp -> donated_from -> donated_to);
-              tmp -> donated_from -> donated_to = NULL;
+              entry = list_remove (entry);
+              tmp->donated_from->donated_to.recipient = NULL;
+              tmp->donated_from->donated_to.blocked_on = NULL;
+
+              enum intr_level prev_level;
+              prev_level = intr_disable ();
               free (tmp);
-            }
+              intr_set_level (prev_level);
+              }
           else
             {
-              e = list_next (e);
+              entry = list_next (entry);
             }
         }
     }
@@ -451,6 +458,8 @@ donate_priority (struct thread *donor, struct thread *recipient, struct lock *bl
   if (recipient == NULL)
     return;
   
+  enum intr_level old_level;
+  old_level = intr_disable ();
   if (priority <= get_priority(recipient))
     return;
 
@@ -458,9 +467,8 @@ donate_priority (struct thread *donor, struct thread *recipient, struct lock *bl
     {
       list_entry (list_rbegin (&recipient->donated_priority), struct effective_priority, elem) -> value = priority;
       list_entry (list_rbegin (&recipient->donated_priority), struct effective_priority, elem) -> donated_from = donor;
-      donor->donated_to = (struct donate_to*) malloc (sizeof(struct donate_to));
-      donor->donated_to->recipient = recipient;
-      donor->donated_to->blocked_on = blocked_on;
+      donor->donated_to.recipient = recipient;
+      donor->donated_to.blocked_on = blocked_on;
     }
   else
     {
@@ -469,13 +477,13 @@ donate_priority (struct thread *donor, struct thread *recipient, struct lock *bl
       tmp->blocked_on = blocked_on;
       tmp->donated_from = donor;
       list_push_back(&recipient->donated_priority, &tmp->elem);
-      donor->donated_to = (struct donate_to*) malloc (sizeof(struct donate_to));
-      donor->donated_to->recipient = recipient;
-      donor->donated_to->blocked_on = blocked_on;
+      donor->donated_to.recipient = recipient;
+      donor->donated_to.blocked_on = blocked_on;
     }
   // nested donation
-  if (recipient->donated_to != NULL)
-    donate_priority(recipient, recipient->donated_to->recipient, recipient->donated_to->blocked_on, priority);
+  if (recipient->donated_to.recipient != NULL)
+    donate_priority(recipient, recipient->donated_to.recipient, recipient->donated_to.blocked_on, priority);
+  intr_set_level (old_level);
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -632,15 +640,6 @@ next_thread_to_run (void)
       struct list_elem * highest_priority = list_max (&ready_list, &priority_less_than, NULL);
       list_remove (highest_priority);
       return list_entry (highest_priority, struct thread, elem);
-    }
-}
-
-void
-maybe_yield (void)
-{
-  if (thread_get_priority() < get_priority(list_entry (list_max (&ready_list, &priority_less_than, NULL), struct thread, elem)) )
-    {
-      thread_yield();
     }
 }
 
