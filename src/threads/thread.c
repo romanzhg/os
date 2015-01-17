@@ -176,13 +176,16 @@ thread_tick (void)
 
   if(thread_mlfqs)
   {
-    thread_current ()->recent_cpu++;
-    thread_current ()->recalculate_priority = true;
+    t -> recent_cpu = t->recent_cpu + INT2FP(1);
+    t -> recalculate_priority = true;
 
-    if ((timer_ticks ()+1) % TIMER_FREQ == 0)
+    if (timer_ticks () % TIMER_FREQ == 0)
       {
         // update load_avg
-        load_avg = (59*load_avg)/60 + INT2FP(list_size(&ready_list) + 1)/60;
+        if (t == idle_thread)
+          load_avg = load_avg * 59 / 60 + INT2FP(list_size(&ready_list)) / 60;
+        else
+          load_avg = load_avg * 59 / 60 + INT2FP(list_size(&ready_list) + 1) / 60;
 /*
         // calculate recent cpu
         for (e = list_begin (&all_list); e != list_end (&all_list); e = list_next(e))
@@ -192,6 +195,7 @@ thread_tick (void)
             t->recalculate_priority = true;
           }
 */
+
       }
   }
   // iterate through the sleep list, decrement the ticks, take out elements
@@ -558,16 +562,14 @@ thread_get_nice (void)
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return FP2INT(load_avg * 100);
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return FP2INT(thread_current()->recent_cpu * 100) ;
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
