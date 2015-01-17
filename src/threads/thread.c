@@ -174,6 +174,26 @@ thread_tick (void)
   else
     kernel_ticks++;
 
+  if(thread_mlfqs)
+  {
+    thread_current ()->recent_cpu++;
+    thread_current ()->recalculate_priority = true;
+
+    if ((timer_ticks ()+1) % TIMER_FREQ == 0)
+      {
+        // update load_avg
+        load_avg = (59*load_avg)/60 + INT2FP(list_size(&ready_list) + 1)/60;
+/*
+        // calculate recent cpu
+        for (e = list_begin (&all_list); e != list_end (&all_list); e = list_next(e))
+          {
+            t = list_entry(e, struct thread, elem);
+            t->recent_cpu = FP_MULTIPLY(FP_DEVIDE((2*load_avg),(2*load_avg + INT2FP(1))), t->recent_cpu) + INT2FP(t->nice);
+            t->recalculate_priority = true;
+          }
+*/
+      }
+  }
   // iterate through the sleep list, decrement the ticks, take out elements
   // with sleep_tics equal to zero, put them on front on the ready list
   struct list_elem *e;
