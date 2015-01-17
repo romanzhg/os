@@ -109,6 +109,11 @@ struct thread
     /* Remaining number of ticks to sleep. */
     int64_t sleep_ticks;
 
+    int nice;
+    // a FP number
+    int recent_cpu;
+    bool recalculate_priority;
+
     /* Effective priority array */
     struct list donated_priority;
     struct donate_to donated_to;
