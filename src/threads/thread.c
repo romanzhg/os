@@ -85,7 +85,16 @@ static tid_t allocate_tid (void);
 static void
 update_priority(struct thread *t)
 {
-  t->priority = 1;
+  if (t->recalculate_priority == true)
+    {
+      int priority = PRI_MAX - FP2INT(t->recent_cpu) / 4 - (t->nice * 2);
+      if (priority > PRI_MAX)
+        priority = PRI_MAX;
+      if (priority < PRI_MIN)
+        priority = PRI_MIN;
+      t->priority = priority;
+      t->recalculate_priority = false;
+    }
 }
 
 /* Initializes the threading system by transforming the code
@@ -418,6 +427,8 @@ thread_set_priority (int new_priority)
 int
 thread_get_priority (void) 
 {
+  if (thread_mlfqs)
+    return thread_current()->priority;
   return get_priority(thread_current ());
 }
 
@@ -425,6 +436,8 @@ thread_get_priority (void)
 int
 get_priority(struct thread *t)
 {
+  if (thread_mlfqs)
+    return t->priority;
   if (list_empty (&t->donated_priority))
     return t->priority;
   else
@@ -440,6 +453,8 @@ get_priority(struct thread *t)
 void
 remove_priority (struct thread *t, struct lock *blocked_on)
 {
+  if (thread_mlfqs)
+    return;
   // when uncomment this the kernel would hang, why?
   if (list_empty (&t->donated_priority))
     return;
@@ -472,6 +487,8 @@ remove_priority (struct thread *t, struct lock *blocked_on)
 void
 donate_priority (struct thread *donor, struct thread *recipient, struct lock *blocked_on, int priority)
 {
+  if (thread_mlfqs)
+    return;
   if (recipient == NULL)
     return;
   
