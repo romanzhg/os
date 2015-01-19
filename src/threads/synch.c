@@ -201,9 +201,12 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  enum intr_level prev_level;
+  prev_level = intr_disable ();
   donate_priority (thread_current(), lock->holder, lock, thread_get_priority());
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
+  intr_set_level (prev_level);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -237,7 +240,7 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  remove_priority(thread_current(), lock);
+  remove_priority(lock);
   lock->holder = NULL;
   sema_up (&lock->semaphore);
 }
@@ -316,7 +319,12 @@ static bool sema_priority_less_than (const struct list_elem *a, const struct lis
   struct semaphore_elem *sema_a, *sema_b;
   sema_a =list_entry (a, struct semaphore_elem, elem);
   sema_b =list_entry (b, struct semaphore_elem, elem);
-  return get_priority(sema_a->t) < get_priority(sema_b->t);
+
+  enum intr_level old_level = intr_disable ();
+  int priority_a = sema_a->t->priority;
+  int priority_b = sema_b->t->priority;
+  intr_set_level (old_level);
+  return priority_a < priority_b;
 }
 
 /* If any threads are waiting on COND (protected by LOCK), then

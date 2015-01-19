@@ -112,11 +112,12 @@ struct thread
     int nice;
     // a FP number
     int recent_cpu;
-    bool recalculate_priority;
 
     /* Effective priority array */
     struct list donated_priority;
     struct donate_to donated_to;
+
+    int original_priority;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -168,6 +169,6 @@ void thread_sleep(int64_t ticks);
 list_less_func priority_less_than;
 
 void donate_priority(struct thread *donor, struct thread *recipient, struct lock *blocked_on, int priority);
-void remove_priority (struct thread *t, struct lock *blocked_on);
+void remove_priority (struct lock *blocked_on);
 
 #endif /* threads/thread.h */
