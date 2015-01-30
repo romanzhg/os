@@ -239,11 +239,13 @@ load (char *file_name, void (**eip) (void), void **esp)
   argv[argc] = strtok_r(file_name, " ", &saveptr);
   while ((argv[++argc] = strtok_r(NULL, " ", &saveptr)) != NULL);
 
+  strlcpy (t->name, argv[0], sizeof t->name);
+
   /* Open executable file. */
   file = filesys_open (argv[0]);
   if (file == NULL) 
     {
-      printf ("load: %s: open failed\n", file_name);
+      printf ("load: %s: open failed\n", argv[0]);
       goto done; 
     }
 
@@ -256,7 +258,7 @@ load (char *file_name, void (**eip) (void), void **esp)
       || ehdr.e_phentsize != sizeof (struct Elf32_Phdr)
       || ehdr.e_phnum > 1024) 
     {
-      printf ("load: %s: error loading executable\n", file_name);
+      printf ("load: %s: error loading executable\n", argv[0]);
       goto done; 
     }
 

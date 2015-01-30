@@ -19,9 +19,19 @@ static void exit (int status);
 static void halt (void);
 static int wait (pid_t pid);
 
+static struct list pid_list;
+
+struct pid_mapping
+{
+  pid_t pid;
+  tid_t tid;
+  struct list_elem elem;
+};
+
 void
 syscall_init (void) 
 {
+  //list_init (&pid_list);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
@@ -44,9 +54,18 @@ syscall_handler (struct intr_frame *f)
       case SYS_WRITE:
         f->eax = write(get_arg((uint8_t *)(esp + 1)), (void *)get_arg((uint8_t *)(esp + 2)), get_arg((uint8_t *)(esp + 3)));
         break;
+      case SYS_EXEC:
+        break;
       default:
         break;
     }
+}
+
+static pid_t
+exec (const char *cmd_line)
+{
+  tid_t tid = process_execute(cmd_line);
+  return 0;
 }
 
 static void
@@ -125,3 +144,5 @@ put_user (uint8_t *udst, uint8_t byte)
        : "=&a" (error_code), "=m" (*udst) : "q" (byte));
   return error_code != -1;
 }
+
+
