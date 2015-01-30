@@ -17,9 +17,10 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "lib/string.h"
 
 static thread_func start_process NO_RETURN;
-static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static bool load (char *cmdline, void (**eip) (void), void **esp);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -30,7 +31,7 @@ process_execute (const char *file_name)
 {
   char *fn_copy;
   tid_t tid;
-
+  
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
@@ -59,12 +60,13 @@ start_process (void *file_name_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
+
   success = load (file_name, &if_.eip, &if_.esp);
 
+  palloc_free_page (file_name_);
   /* If load failed, quit. */
-  palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
+  if (!success)
+      thread_exit ();
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -86,9 +88,19 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  return -1;
+  int rtn =  -1;
+  if (!thread_is_child (child_tid))
+    return -1;
+
+  if (thread_wait(child_tid))
+    {
+      rtn = thread_get_exit_status(child_tid);
+      return rtn;
+    }
+  else
+    return -1;
 }
 
 /* Free the current process's resources. */
@@ -195,7 +207,7 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp);
+static bool setup_stack (void **esp, int argc, char** argv);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
@@ -206,7 +218,7 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
 bool
-load (const char *file_name, void (**eip) (void), void **esp) 
+load (char *file_name, void (**eip) (void), void **esp) 
 {
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
@@ -221,8 +233,14 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
+  int argc = 0;
+  char * saveptr;
+  char **argv = palloc_get_page (PAL_USER | PAL_ZERO);;
+  argv[argc] = strtok_r(file_name, " ", &saveptr);
+  while ((argv[++argc] = strtok_r(NULL, " ", &saveptr)) != NULL);
+
   /* Open executable file. */
-  file = filesys_open (file_name);
+  file = filesys_open (argv[0]);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
@@ -302,13 +320,16 @@ load (const char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp))
+  if (!setup_stack (esp, argc, argv)) {
+    palloc_free_page(argv);
     goto done;
+  }
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
 
   success = true;
+  palloc_free_page(argv);
 
  done:
   /* We arrive here whether the load is successful or not. */
@@ -427,17 +448,56 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
-setup_stack (void **esp) 
+setup_stack (void **esp, int argc, char** argv) 
 {
   uint8_t *kpage;
   bool success = false;
+  char * tmp_addrs[128];
 
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE;
+        {
+          *esp = PHYS_BASE;
+          int j = 0;
+          for (j = argc - 1; j >= 0; j--) { 
+              //printf("esp value: %p", *esp);
+              *esp -= (strlen(argv[j]) + 1); 
+              //printf("esp value: %p", *esp);
+              //printf("argv value: %s", (char *) argv[j]);
+              //printf("argv length: %d", strlen(argv[j]));
+              memcpy(*esp, argv[j], (strlen(argv[j])+1));
+              //*((char *)addrs + j) = *esp;
+              tmp_addrs[j] = *esp;
+              //printf("string value: %s", (char *) *esp);
+            }
+          // no word align, put a zero here
+          *esp -= 4;
+          // the page was initialized as zero, no need to set it
+          //printf("0x%x", *(uint32_t *)(*esp));
+
+          
+          //printf("esp value: %p\n", *esp);
+          for (j = argc - 1; j >= 0; j--)
+            {
+              *esp -= 4;
+              //*((uint32_t *)*esp) = *(addrs + j);
+              *((uint32_t *) *esp) = (uint32_t) tmp_addrs[j];
+            }
+
+          *esp -= 4; 
+          //printf("esp value: %p\n", *esp);
+          *((uint32_t *)*esp) = (uint32_t)(((uint32_t*) *esp) + 1); 
+          //printf("value: %p\n", *(uint32_t *)*esp);
+
+          *esp -= 4;
+          *((int32_t *)*esp) = argc;
+
+          *esp -= 4;
+          *((int32_t *)*esp) = 0;
+        }
       else
         palloc_free_page (kpage);
     }

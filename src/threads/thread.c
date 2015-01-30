@@ -183,6 +183,12 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
+#ifdef USERPROG
+  enum intr_level old_level = intr_disable ();
+  t->parent = thread_current ()->tid;
+  intr_set_level (old_level);
+#endif
+
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -275,6 +281,88 @@ thread_tid (void)
   return thread_current ()->tid;
 }
 
+#ifdef USERPROG
+void
+thread_set_exit_status (int exit_status)
+{
+  enum intr_level old_level = intr_disable ();
+  thread_current ()->exit_status = exit_status;
+  intr_set_level (old_level);
+}
+
+int
+thread_get_exit_status (tid_t tid)
+{
+  int rtn = 0;
+  enum intr_level old_level = intr_disable ();
+  struct list_elem *e;
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if (t->tid == tid)
+        rtn = t->exit_status;
+        sema_up(&t->to_exit);
+        thread_current ()->wait_on = -1;
+    }
+  intr_set_level (old_level);
+  return rtn;
+}
+
+bool
+thread_is_child (tid_t tid)
+{
+  bool rtn = false;
+  enum intr_level old_level = intr_disable ();
+  struct list_elem *e;
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if (t->tid == tid)
+        {
+          if (t->parent == thread_current ()->tid)
+            rtn = true;
+          else
+            rtn = false;
+        }
+    }
+  intr_set_level (old_level);
+  return rtn;
+}
+
+bool
+thread_wait (tid_t tid)
+{
+  struct thread* thread_to_wait = NULL;
+  struct thread* current = NULL;
+
+  enum intr_level old_level = intr_disable ();
+  current = thread_current ();
+  struct list_elem *e;
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if (t->tid == tid)
+        {
+          thread_to_wait = t;
+        }
+    }
+  intr_set_level (old_level);
+
+  if (thread_to_wait != NULL)
+    {
+      sema_down(&thread_to_wait->get_status);
+      current -> wait_on = tid;
+      return true;
+    }
+  else
+    return false;
+}
+
+#endif
+
 /* Deschedules the current thread and destroys it.  Never
    returns to the caller. */
 void
@@ -284,6 +372,32 @@ thread_exit (void)
 
 #ifdef USERPROG
   process_exit ();
+  
+  enum intr_level old_level = intr_disable ();
+  printf ("%s: exit(%d)\n", thread_current ()->name, thread_current ()->exit_status);
+
+  if (thread_current ()->wait_on != -1)
+    thread_get_exit_status (thread_current ()->wait_on);
+
+  while (!sema_try_down(&thread_current() ->get_status)) {
+    sema_up(&thread_current() ->get_status);
+    intr_set_level (old_level);
+    sema_down(&thread_current ()->to_exit);
+    old_level = intr_disable ();
+  }
+  intr_set_level (old_level);
+/*
+  if(sema_try_down(&thread_current() ->get_status)) {
+    // no one is waiting, do nothing
+    intr_set_level (old_level);
+  } else {
+    // wakeup waiter, sema down
+    sema_up(&thread_current() ->get_status);
+    intr_set_level (old_level);
+    sema_down(&thread_current ()->to_exit);
+  }
+*/
+  
 #endif
 
   /* Remove thread from all threads list, set our status to dying,
@@ -463,6 +577,13 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+
+#ifdef USERPROG
+  sema_init(&t->get_status, 0);
+  sema_init(&t->to_exit, 0);
+  t->exit_status = 0;
+  t->wait_on = -1;
+#endif
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
