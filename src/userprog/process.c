@@ -18,9 +18,29 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "lib/string.h"
+#include "threads/malloc.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (char *cmdline, void (**eip) (void), void **esp);
+static pid_t allocate_pid (void);
+
+struct list pid_list; 
+struct lock pid_lock;
+ 
+struct pid_mapping 
+{ 
+  pid_t pid; 
+  tid_t tid; 
+  struct list_elem elem; 
+}; 
+
+void
+process_init(void)
+{
+  list_init(&pid_list);
+  lock_init(&pid_lock);
+}
+
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -43,6 +63,17 @@ process_execute (const char *file_name)
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
+  
+  thread_wait_ready(tid);
+
+  struct pid_mapping* mapping = (struct pid_mapping*) malloc(sizeof (struct pid_mapping));
+  mapping->pid = allocate_pid();
+  mapping->tid = tid;
+
+  lock_acquire (&pid_lock);
+  list_push_back (&pid_list, &mapping->elem);
+  lock_release (&pid_lock);
+
   return tid;
 }
 
@@ -67,6 +98,9 @@ start_process (void *file_name_)
   /* If load failed, quit. */
   if (!success)
       thread_exit ();
+
+  struct thread * t = thread_current();
+  sema_up(&t->ready);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -524,4 +558,53 @@ install_page (void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
+}
+
+static pid_t
+allocate_pid (void)
+{
+  static pid_t next_pid = 1;
+  pid_t pid;
+
+  lock_acquire (&pid_lock);
+  pid = next_pid++;
+  lock_release (&pid_lock);
+
+  return pid;
+}
+
+pid_t
+process_get_pid(tid_t tid)
+{
+  pid_t pid = -1;
+  lock_acquire (&pid_lock);
+  struct list_elem *e;
+  for (e = list_begin (&pid_list); e != list_end (&pid_list);
+       e = list_next (e))
+    {
+      struct pid_mapping *p = list_entry (e, struct pid_mapping, elem);
+      if (p->tid == tid) {
+        pid = p->pid;
+      }
+    }
+  lock_release(&pid_lock);
+  return pid;
+}
+
+tid_t
+process_get_tid(pid_t pid)
+{
+  tid_t tid = -1;
+  lock_acquire (&pid_lock);
+  struct list_elem *e;
+  for (e = list_begin (&pid_list); e != list_end (&pid_list);
+       e = list_next (e))
+    {
+      struct pid_mapping *p = list_entry (e, struct pid_mapping, elem);
+      if (p->pid == pid) {
+        tid = p->tid;
+      }
+    }
+  lock_release(&pid_lock);
+  return tid;
 }

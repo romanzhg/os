@@ -97,6 +97,7 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    struct semaphore ready;             /* Successfully loaded. */
     struct semaphore to_exit;
     struct semaphore get_status;
     int exit_status;
@@ -149,6 +150,7 @@ bool thread_is_child (tid_t tid);
 void thread_set_exit_status (int exit_status);
 int thread_get_exit_status (tid_t tid);
 bool thread_wait (tid_t tid);
+void thread_wait_ready (tid_t tid);
 #endif
 
 #endif /* threads/thread.h */

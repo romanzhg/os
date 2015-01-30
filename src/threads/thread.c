@@ -361,6 +361,28 @@ thread_wait (tid_t tid)
     return false;
 }
 
+void
+thread_wait_ready (tid_t tid)
+{
+  struct thread* thread_to_wait = NULL;
+
+  enum intr_level old_level = intr_disable ();
+  struct list_elem *e;
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if (t->tid == tid)
+        {
+          thread_to_wait = t;
+        }
+    }
+  intr_set_level (old_level);
+
+  if (thread_to_wait != NULL)
+    sema_down(&thread_to_wait->ready);
+}
+
 #endif
 
 /* Deschedules the current thread and destroys it.  Never
@@ -581,6 +603,7 @@ init_thread (struct thread *t, const char *name, int priority)
 #ifdef USERPROG
   sema_init(&t->get_status, 0);
   sema_init(&t->to_exit, 0);
+  sema_init(&t->ready, 0);
   t->exit_status = 0;
   t->wait_on = -1;
 #endif
