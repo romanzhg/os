@@ -8,6 +8,7 @@
 #include "devices/shutdown.h"
 #include "threads/vaddr.h"
 #include "userprog/process.h"
+#include "userprog/pagedir.h"
 
 typedef int pid_t;
 
@@ -19,6 +20,7 @@ static int write (int fd, const void *buffer, unsigned length);
 static void exit (int status);
 static void halt (void);
 static int wait (pid_t pid);
+static int read (int fd, void *buffer, unsigned length);
 static pid_t exec (const char *cmd_line);
 
 void
@@ -26,6 +28,19 @@ syscall_init (void)
 {
   process_init();
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+}
+
+static bool
+validate_address(const void* p)
+{
+  if (!is_user_vaddr(p))
+    return false;
+  struct thread *t;
+  t = thread_current();
+  if (pagedir_get_page(t->pagedir, p) == NULL)
+    return false;
+  else
+    return true;
 }
 
 static void
@@ -50,6 +65,9 @@ syscall_handler (struct intr_frame *f)
       case SYS_EXEC:
         f->eax = exec((char *)get_arg((uint8_t *)(esp + 1)));
         break;
+      case SYS_READ:
+        f->eax = read(get_arg((uint8_t *)(esp + 1)), (void *)get_arg((uint8_t *)(esp + 2)), get_arg((uint8_t *)(esp + 3)));
+        break;
       default:
         break;
     }
@@ -59,7 +77,6 @@ static pid_t
 exec (const char *cmd_line)
 {
   tid_t tid = process_execute(cmd_line);
-
   int rtn = process_get_pid(tid);
   return rtn;
 }
@@ -101,15 +118,25 @@ write(int fd, const void *buffer, unsigned length) {
 
   if (fd == 1) {
     putbuf(kbuf, length);
+    free(kbuf);
     return length;
   }
+  free(kbuf);
   return 0;
 
 }
 
 static int
+read (int fd, void *buffer, unsigned length){
+  
+  
+}
+
+static int
 get_arg (const uint8_t *uaddr)
 {
+  if (!validate_address(uaddr)) 
+    exit(-1);
   int result;
   int tmp;
   uint8_t *buf = (uint8_t *) &result;
@@ -118,7 +145,7 @@ get_arg (const uint8_t *uaddr)
     {
       tmp = get_user(uaddr + i);
       if (tmp == -1) {
-        printf("error in get arg\n");
+        printf("error in get arg\n\n");
         return -1;
       } else
         buf[i] = tmp;

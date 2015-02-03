@@ -74,6 +74,8 @@ process_execute (const char *file_name)
   list_push_back (&pid_list, &mapping->elem);
   lock_release (&pid_lock);
 
+  if (thread_get_exit_status (tid) == -1)
+    return -1;
   return tid;
 }
 
@@ -95,11 +97,14 @@ start_process (void *file_name_)
   success = load (file_name, &if_.eip, &if_.esp);
 
   palloc_free_page (file_name_);
-  /* If load failed, quit. */
-  if (!success)
-      thread_exit ();
 
   struct thread * t = thread_current();
+  /* If load failed, quit. */
+  if (!success){
+    thread_set_exit_status(-1);
+    thread_exit ();
+  }
+
   sema_up(&t->ready);
 
   /* Start the user process by simulating a return from an
@@ -124,17 +129,7 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid) 
 {
-  int rtn =  -1;
-  if (!thread_is_child (child_tid))
-    return -1;
-
-  if (thread_wait(child_tid))
-    {
-      rtn = thread_get_exit_status(child_tid);
-      return rtn;
-    }
-  else
-    return -1;
+  return thread_wait(child_tid);
 }
 
 /* Free the current process's resources. */
@@ -279,7 +274,7 @@ load (char *file_name, void (**eip) (void), void **esp)
   file = filesys_open (argv[0]);
   if (file == NULL) 
     {
-      printf ("load: %s: open failed\n", argv[0]);
+      printf ("load: %s: open failed\n", file_name);
       goto done; 
     }
 
@@ -292,7 +287,7 @@ load (char *file_name, void (**eip) (void), void **esp)
       || ehdr.e_phentsize != sizeof (struct Elf32_Phdr)
       || ehdr.e_phnum > 1024) 
     {
-      printf ("load: %s: error loading executable\n", argv[0]);
+      printf ("load: %s: error loading executable\n", file_name);
       goto done; 
     }
 

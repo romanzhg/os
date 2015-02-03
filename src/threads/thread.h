@@ -25,6 +25,11 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+struct child {
+  struct thread *t;
+  struct list_elem elem;
+};
+
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -101,8 +106,7 @@ struct thread
     struct semaphore to_exit;
     struct semaphore get_status;
     int exit_status;
-    tid_t parent;
-    tid_t wait_on;
+    struct list children;
 #endif
 
     /* Owned by thread.c. */
@@ -146,11 +150,10 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 #ifdef USERPROG
-bool thread_is_child (tid_t tid);
 void thread_set_exit_status (int exit_status);
-int thread_get_exit_status (tid_t tid);
-bool thread_wait (tid_t tid);
+int thread_wait (tid_t tid);
 void thread_wait_ready (tid_t tid);
+int thread_get_exit_status (tid_t tid);
 #endif
 
 #endif /* threads/thread.h */
