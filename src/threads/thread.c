@@ -450,9 +450,10 @@ thread_exit (void)
   sema_up(&current->ready);
   intr_set_level (old_level);
 
+  // wait for parent to get
   sema_down(&current->to_exit);
 
-  // release all children
+  // release all resources
   old_level = intr_disable ();
   struct list_elem *e;
   current = thread_current ();
@@ -465,8 +466,8 @@ thread_exit (void)
     }
   intr_set_level (old_level);
 
-  // TODO: remove the pid-tid mapping
   process_remove_tid(tid);
+
 #endif
 
   /* Remove thread from all threads list, set our status to dying,
