@@ -26,6 +26,8 @@ static pid_t allocate_pid (void);
 
 struct list pid_list; 
 struct lock pid_lock;
+
+struct lock fs_lock; 
  
 struct pid_mapping 
 { 
@@ -34,11 +36,20 @@ struct pid_mapping
   struct list_elem elem; 
 }; 
 
+struct file_des
+{ 
+  int fd;
+  struct file * f;
+  struct list_elem elem; 
+}; 
+
 void
 process_init(void)
 {
   list_init(&pid_list);
   lock_init(&pid_lock);
+
+  lock_init(&fs_lock);
 }
 
 
@@ -65,6 +76,8 @@ process_execute (const char *file_name)
     palloc_free_page (fn_copy); 
   
   thread_wait_ready(tid);
+  if (thread_check_exit_status (tid) == -1)
+    return -1;
 
   struct pid_mapping* mapping = (struct pid_mapping*) malloc(sizeof (struct pid_mapping));
   mapping->pid = allocate_pid();
@@ -74,8 +87,6 @@ process_execute (const char *file_name)
   list_push_back (&pid_list, &mapping->elem);
   lock_release (&pid_lock);
 
-  if (thread_get_exit_status (tid) == -1)
-    return -1;
   return tid;
 }
 
@@ -602,4 +613,56 @@ process_get_tid(pid_t pid)
     }
   lock_release(&pid_lock);
   return tid;
+}
+
+int process_open_file(struct file * f) {
+  struct file_des * file_des = malloc (sizeof (struct file_des));
+  file_des->f = f;
+  file_des->fd = thread_get_next_fd();
+
+  enum intr_level old_level = intr_disable ();
+  struct list * fd_list = &thread_current()->fd_list;
+  list_push_back(fd_list, &file_des->elem);
+  intr_set_level (old_level);
+
+  return file_des->fd;
+}
+
+void process_close_file(int fd) {
+  enum intr_level old_level = intr_disable ();
+  struct list * fd_list = &thread_current()->fd_list;
+  struct list_elem *e;
+  for (e = list_begin (fd_list); e != list_end (fd_list);
+       e = list_next (e))
+    {
+      struct file_des *file_des = list_entry (e, struct file_des, elem);
+      if (file_des->fd == fd){
+        e = list_remove(e);
+        free(file_des);
+        break;
+      }
+      else
+        e = list_next (e);
+    }
+  intr_set_level (old_level);
+}
+
+struct file * process_lookup_fd(int fd)
+{
+  struct file * rtn = NULL;
+
+  enum intr_level old_level = intr_disable ();
+  struct list * fd_list = &thread_current()->fd_list;
+  struct list_elem *e;
+  for (e = list_begin (fd_list); e != list_end (fd_list);
+       e = list_next (e))
+    {
+      struct file_des *file_des = list_entry (e, struct file_des, elem);
+      if (file_des->fd == fd){
+        rtn = file_des->f;
+        break;
+      }
+    }
+  intr_set_level (old_level);
+  return rtn;
 }

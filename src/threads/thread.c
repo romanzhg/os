@@ -289,12 +289,13 @@ void
 thread_set_exit_status (int exit_status)
 {
   enum intr_level old_level = intr_disable ();
+  //printf("setting exit status to %d\n", exit_status);
   thread_current ()->exit_status = exit_status;
   intr_set_level (old_level);
 }
 
 int
-thread_get_exit_status (tid_t tid)
+thread_check_exit_status (tid_t tid)
 {
   int rtn = -1;
   enum intr_level old_level = intr_disable ();
@@ -305,32 +306,55 @@ thread_get_exit_status (tid_t tid)
       struct thread *t = list_entry (e, struct thread, allelem);
       if (t->tid == tid)
         rtn = t->exit_status;
-        sema_up(&t->to_exit);
     }
   intr_set_level (old_level);
   return rtn;
 }
 
-/*
-bool
-thread_is_child (tid_t tid)
+int
+thread_get_exit_status (tid_t tid)
 {
+  //printf("going to get status for tid: %d\n", tid);
+  int rtn = -1;
   enum intr_level old_level = intr_disable ();
-  struct thread *current;
   struct list_elem *e;
+
+  struct thread* current = thread_current ();
   for (e = list_begin (&current->children); e != list_end (&current->children);
        e = list_next (e))
     {
       struct child *c = list_entry (e, struct child, elem);
-      if (c->t->tid == tid) {
-        intr_set_level (old_level);
-        return true;
-      }
+      if (c->t->tid == tid)
+        {
+          rtn = c->t->exit_status;
+          sema_up(&c->t->to_exit);
+        }
     }
-  intr_set_level (old_level);
-  return false;
-}
+//TODO: why using the all list would fail?
+/*
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if (t->tid == tid)
+        rtn = t->exit_status;
+        sema_up(&t->to_exit);
+    }
 */
+
+  intr_set_level (old_level);
+  return rtn;
+}
+
+int
+thread_get_next_fd(void)
+{
+  int rtn;
+  enum intr_level old_level = intr_disable ();
+  rtn = thread_current()->next_fd++;
+  intr_set_level (old_level);
+  return rtn;
+}
 
 int
 thread_wait (tid_t tid)
@@ -348,6 +372,7 @@ thread_wait (tid_t tid)
       if (c->t->tid == tid)
         {
           thread_to_wait = c->t;
+          //printf("111 thread %d is going to wait for: %d\n", current->tid, thread_to_wait->tid);
         }
     }
   intr_set_level (old_level);
@@ -355,16 +380,20 @@ thread_wait (tid_t tid)
   if (thread_to_wait != NULL)
     {
       sema_down(&thread_to_wait->get_status);
-      old_level = intr_disable ();
-      rtn = thread_get_exit_status(thread_to_wait->tid);
 
-      for (e = list_begin (&current->children); e != list_end (&current->children);)
+      old_level = intr_disable ();
+      //printf("222 thread %d is going to wait for: %d\n", current->tid, tid);
+      rtn = thread_get_exit_status(tid);
+      //printf("waiting rtn value: %d\n", rtn);
+
+      for (e = list_begin (&thread_current()->children); e != list_end (&thread_current()->children);)
         {
           struct child *c = list_entry (e, struct child, elem);
           if (c->t->tid == tid)
             {
               e = list_remove(e);
               free(c);
+              break;
             }
           else
             e = list_next(e);
@@ -415,18 +444,19 @@ thread_exit (void)
   printf ("%s: exit(%d)\n", current->name, current->exit_status);
   sema_up(&current->get_status);
   // an exiting thread should be ready
-   sema_up(&current->ready);
+  sema_up(&current->ready);
   intr_set_level (old_level);
+
   sema_down(&current->to_exit);
 
   // release all children
   old_level = intr_disable ();
   struct list_elem *e;
+  current = thread_current ();
   for (e = list_begin (&current->children); e != list_end (&current->children);)
     {
       struct child *c = list_entry (e, struct child, elem);
       thread_get_exit_status(c->t->tid);
-
       e = list_remove(e);
       free(c);
     }
@@ -435,7 +465,6 @@ thread_exit (void)
   // TODO: remove the pid-tid mapping
 #endif
 
-thread_cleanup:
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
@@ -620,6 +649,8 @@ init_thread (struct thread *t, const char *name, int priority)
   sema_init(&t->ready, 0);
   list_init(&t->children);
   t->exit_status = 0;
+  list_init(&t->fd_list);
+  t->next_fd = 2;
 #endif
 
   old_level = intr_disable ();

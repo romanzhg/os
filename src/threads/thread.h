@@ -102,11 +102,13 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    struct list fd_list;
     struct semaphore ready;             /* Successfully loaded. */
     struct semaphore to_exit;
     struct semaphore get_status;
     int exit_status;
     struct list children;
+    int next_fd;
 #endif
 
     /* Owned by thread.c. */
@@ -154,6 +156,8 @@ void thread_set_exit_status (int exit_status);
 int thread_wait (tid_t tid);
 void thread_wait_ready (tid_t tid);
 int thread_get_exit_status (tid_t tid);
+int thread_check_exit_status (tid_t tid);
+int thread_get_next_fd(void);
 #endif
 
 #endif /* threads/thread.h */
