@@ -17,5 +17,6 @@ void process_init(void);
 int process_open_file(struct file * f);
 void process_close_file(int fd);
 struct file * process_lookup_fd(int fd);
+void process_remove_tid(tid_t tid);
 
 #endif /* userprog/process.h */

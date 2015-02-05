@@ -23,6 +23,7 @@
 static thread_func start_process NO_RETURN;
 static bool load (char *cmdline, void (**eip) (void), void **esp);
 static pid_t allocate_pid (void);
+static void process_close_files(void);
 
 struct list pid_list; 
 struct lock pid_lock;
@@ -150,6 +151,7 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
+  process_close_files();
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -374,8 +376,10 @@ load (char *file_name, void (**eip) (void), void **esp)
   palloc_free_page(argv);
 
  done:
-  /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  t = thread_current();
+  t->file = file;
+  if (file != NULL)
+    file_deny_write(file);
   return success;
 }
 
@@ -615,6 +619,24 @@ process_get_tid(pid_t pid)
   return tid;
 }
 
+void
+process_remove_tid(tid_t tid)
+{
+  lock_acquire (&pid_lock);
+  struct list_elem *e;
+  for (e = list_begin (&pid_list); e != list_end (&pid_list);)
+    {
+      struct pid_mapping *p = list_entry (e, struct pid_mapping, elem);
+      if (p->tid == tid) {
+        e = list_remove(e);
+        free(p);
+      } else {
+        e = list_next(e);
+      }
+    }
+  lock_release(&pid_lock);
+}
+
 int process_open_file(struct file * f) {
   struct file_des * file_des = malloc (sizeof (struct file_des));
   file_des->f = f;
@@ -628,6 +650,20 @@ int process_open_file(struct file * f) {
   return file_des->fd;
 }
 
+static void
+process_close_files(void) {
+  enum intr_level old_level = intr_disable ();
+  struct list * fd_list = &thread_current()->fd_list;
+  struct list_elem *e;
+  for (e = list_begin (fd_list); e != list_end (fd_list);)
+    {
+      struct file_des *file_des = list_entry (e, struct file_des, elem);
+      e = list_remove(e);
+      file_close(file_des->f);
+      free(file_des);
+    }
+  intr_set_level (old_level);
+}
 void process_close_file(int fd) {
   enum intr_level old_level = intr_disable ();
   struct list * fd_list = &thread_current()->fd_list;

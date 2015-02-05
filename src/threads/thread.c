@@ -436,10 +436,13 @@ thread_exit (void)
 
 #ifdef USERPROG
   
+  tid_t tid;
   struct thread * current;
   enum intr_level old_level = intr_disable ();
   process_exit ();
   current = thread_current ();
+  file_close(current->file);
+  tid = current->tid;
 
   printf ("%s: exit(%d)\n", current->name, current->exit_status);
   sema_up(&current->get_status);
@@ -463,6 +466,7 @@ thread_exit (void)
   intr_set_level (old_level);
 
   // TODO: remove the pid-tid mapping
+  process_remove_tid(tid);
 #endif
 
   /* Remove thread from all threads list, set our status to dying,
