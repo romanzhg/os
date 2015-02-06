@@ -37,6 +37,7 @@ static struct thread *initial_thread;
 
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
+static struct lock pid_lock;
 
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
@@ -71,6 +72,10 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+#ifdef USERPROG
+static pid_t allocate_pid (void);
+static int thread_get_next_fd(void);
+#endif
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -91,6 +96,7 @@ thread_init (void)
   ASSERT (intr_get_level () == INTR_OFF);
 
   lock_init (&tid_lock);
+  lock_init (&pid_lock);
   list_init (&ready_list);
   list_init (&all_list);
 
@@ -185,11 +191,7 @@ thread_create (const char *name, int priority,
   tid = t->tid = allocate_tid ();
 
 #ifdef USERPROG
-  enum intr_level old_level = intr_disable ();
-  struct child * c = malloc(sizeof(struct child));
-  c->t = t;
-  list_push_back(&thread_current ()->children, &c->elem);
-  intr_set_level (old_level);
+  t->pid = allocate_pid ();
 #endif
 
   /* Stack frame for kernel_thread(). */
@@ -289,69 +291,30 @@ void
 thread_set_exit_status (int exit_status)
 {
   enum intr_level old_level = intr_disable ();
-  //printf("setting exit status to %d\n", exit_status);
   thread_current ()->exit_status = exit_status;
   intr_set_level (old_level);
 }
 
-int
-thread_check_exit_status (tid_t tid)
-{
-  int rtn = -1;
-  enum intr_level old_level = intr_disable ();
-  struct list_elem *e;
-  for (e = list_begin (&all_list); e != list_end (&all_list);
-       e = list_next (e))
-    {
-      struct thread *t = list_entry (e, struct thread, allelem);
-      if (t->tid == tid)
-        rtn = t->exit_status;
-    }
-  intr_set_level (old_level);
-  return rtn;
-}
-
+// get status of thread tid and let it continue to exit
 int
 thread_get_exit_status (tid_t tid)
 {
-  //printf("going to get status for tid: %d\n", tid);
   int rtn = -1;
+
   enum intr_level old_level = intr_disable ();
   struct list_elem *e;
-
-  struct thread* current = thread_current ();
+  struct thread *current = thread_current ();
   for (e = list_begin (&current->children); e != list_end (&current->children);
        e = list_next (e))
     {
-      struct child *c = list_entry (e, struct child, elem);
-      if (c->t->tid == tid)
+      struct child_thread *child = list_entry (e, struct child_thread, elem);
+      if (child->thread->tid == tid)
         {
-          rtn = c->t->exit_status;
-          sema_up(&c->t->to_exit);
+          rtn = child->thread->exit_status;
+          sema_up (&child->thread->to_exit);
+          break;
         }
     }
-//TODO: why using the all list would fail?
-/*
-  for (e = list_begin (&all_list); e != list_end (&all_list);
-       e = list_next (e))
-    {
-      struct thread *t = list_entry (e, struct thread, allelem);
-      if (t->tid == tid)
-        rtn = t->exit_status;
-        sema_up(&t->to_exit);
-    }
-*/
-
-  intr_set_level (old_level);
-  return rtn;
-}
-
-int
-thread_get_next_fd(void)
-{
-  int rtn;
-  enum intr_level old_level = intr_disable ();
-  rtn = thread_current()->next_fd++;
   intr_set_level (old_level);
   return rtn;
 }
@@ -361,38 +324,38 @@ thread_wait (tid_t tid)
 {
   int rtn = -1;
   struct thread* thread_to_wait = NULL;
+  struct list_elem *e;
 
   enum intr_level old_level = intr_disable ();
   struct thread* current = thread_current ();
-  struct list_elem *e;
+
   for (e = list_begin (&current->children); e != list_end (&current->children);
        e = list_next (e))
     {
-      struct child *c = list_entry (e, struct child, elem);
-      if (c->t->tid == tid)
+      struct child_thread *child = list_entry (e, struct child_thread, elem);
+      if (child->thread->tid == tid)
         {
-          thread_to_wait = c->t;
-          //printf("111 thread %d is going to wait for: %d\n", current->tid, thread_to_wait->tid);
+          thread_to_wait = child->thread;
+          break;
         }
     }
   intr_set_level (old_level);
 
   if (thread_to_wait != NULL)
     {
+      // wait for the thread to exit
       sema_down(&thread_to_wait->get_status);
 
       old_level = intr_disable ();
-      //printf("222 thread %d is going to wait for: %d\n", current->tid, tid);
       rtn = thread_get_exit_status(tid);
-      //printf("waiting rtn value: %d\n", rtn);
 
-      for (e = list_begin (&thread_current()->children); e != list_end (&thread_current()->children);)
+      for (e = list_begin (&current->children); e != list_end (&current->children);)
         {
-          struct child *c = list_entry (e, struct child, elem);
-          if (c->t->tid == tid)
+          struct child_thread *child = list_entry (e, struct child_thread, elem);
+          if (child->thread->tid == tid)
             {
               e = list_remove(e);
-              free(c);
+              free(child);
               break;
             }
           else
@@ -403,6 +366,7 @@ thread_wait (tid_t tid)
   return rtn;
 }
 
+// return true if the thread is started correctly
 void
 thread_wait_ready (tid_t tid)
 {
@@ -425,6 +389,26 @@ thread_wait_ready (tid_t tid)
     sema_down(&thread_to_wait->ready);
 }
 
+int
+thread_check_exit_status (tid_t tid)
+{
+  int rtn = -1;
+  enum intr_level old_level = intr_disable ();
+  struct list_elem *e;
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if (t->tid == tid)
+        {
+          rtn = t->exit_status;
+          break;
+        }
+    }
+  intr_set_level (old_level);
+  return rtn;
+}
+
 #endif
 
 /* Deschedules the current thread and destroys it.  Never
@@ -435,39 +419,41 @@ thread_exit (void)
   ASSERT (!intr_context ());
 
 #ifdef USERPROG
-  
-  tid_t tid;
-  struct thread * current;
   enum intr_level old_level = intr_disable ();
-  process_exit ();
-  current = thread_current ();
-  file_close(current->file);
-  tid = current->tid;
-
+  struct thread *current = thread_current ();
   printf ("%s: exit(%d)\n", current->name, current->exit_status);
+
+  process_exit ();
+  file_close(current->file);
+
   sema_up(&current->get_status);
-  // an exiting thread should be ready
   sema_up(&current->ready);
+
   intr_set_level (old_level);
 
   // wait for parent to get
   sema_down(&current->to_exit);
 
-  // release all resources
+  // release resources
   old_level = intr_disable ();
   struct list_elem *e;
-  current = thread_current ();
   for (e = list_begin (&current->children); e != list_end (&current->children);)
     {
-      struct child *c = list_entry (e, struct child, elem);
-      thread_get_exit_status(c->t->tid);
+      struct child_thread *child = list_entry (e, struct child_thread, elem);
+      thread_get_exit_status(child->thread->tid);
       e = list_remove(e);
-      free(c);
+      free(child);
     }
+  
+  for (e = list_begin (&current->fd_list); e != list_end (&current->fd_list);)
+    {
+      struct file_des *file_des = list_entry (e, struct file_des, elem);
+      file_close(file_des->file);
+      e = list_remove(e);
+      free(file_des);
+    }
+
   intr_set_level (old_level);
-
-  process_remove_tid(tid);
-
 #endif
 
   /* Remove thread from all threads list, set our status to dying,
@@ -776,3 +762,138 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+#ifdef USERPROG
+int
+thread_open_file(struct file * f)
+{
+  struct file_des * file_des = malloc (sizeof (struct file_des));
+  if (file_des == NULL)
+    return -1;
+  file_des->file = f;
+  file_des->fd = thread_get_next_fd();
+
+  enum intr_level old_level = intr_disable ();
+  list_push_back(&thread_current()->fd_list, &file_des->elem);
+  intr_set_level (old_level);
+
+  return file_des->fd;
+}
+
+void
+thread_close_file(int fd)
+{
+  struct file * file = NULL;
+  enum intr_level old_level = intr_disable ();
+  struct list * fd_list = &thread_current()->fd_list;
+  struct list_elem *e;
+  for (e = list_begin (fd_list); e != list_end (fd_list); e = list_next (e))
+    {
+      struct file_des *file_des = list_entry (e, struct file_des, elem);
+      if (file_des->fd == fd){
+        file = file_des->file;
+        e = list_remove(e);
+        free(file_des);
+        break;
+      }
+    }
+  intr_set_level (old_level);
+  if (file != NULL)
+    file_close(file);
+}
+
+struct file *
+thread_lookup_fd (int fd)
+{
+  struct file * rtn = NULL;
+
+  enum intr_level old_level = intr_disable ();
+  struct list * fd_list = &thread_current()->fd_list;
+  struct list_elem *e;
+  for (e = list_begin (fd_list); e != list_end (fd_list);
+       e = list_next (e))
+    {
+      struct file_des *file_des = list_entry (e, struct file_des, elem);
+      if (file_des->fd == fd){
+        rtn = file_des->file;
+        break;
+      }
+    }
+  intr_set_level (old_level);
+  return rtn;
+}
+
+static int
+thread_get_next_fd (void)
+{
+  int rtn;
+  enum intr_level old_level = intr_disable ();
+  rtn = thread_current()->next_fd++;
+  intr_set_level (old_level);
+  return rtn;
+}
+
+pid_t
+thread_get_pid (tid_t tid)
+{
+  int rtn = -1;
+  enum intr_level old_level = intr_disable ();
+  struct list_elem *e;
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if (t->tid == tid)
+        rtn = t->pid;
+    }
+  intr_set_level (old_level);
+  return rtn;
+}
+
+tid_t
+thread_get_tid (pid_t pid)
+{
+  int rtn = -1;
+  enum intr_level old_level = intr_disable ();
+  struct list_elem *e;
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if (t->pid == pid)
+        rtn = t->tid;
+    }
+  intr_set_level (old_level);
+  return rtn;
+}
+
+struct thread *
+thread_lookup_tid (tid_t tid)
+{
+  struct thread * rtn = NULL;
+  enum intr_level old_level = intr_disable ();
+  struct list_elem *e;
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if (t->tid == tid)
+        rtn = t;
+    }
+  intr_set_level (old_level);
+  return rtn;
+}
+
+static pid_t
+allocate_pid (void) 
+{
+  static pid_t next_pid = 1;
+  pid_t pid;
+
+  lock_acquire (&pid_lock);
+  pid = next_pid++;
+  lock_release (&pid_lock);
+
+  return pid;
+}
+#endif

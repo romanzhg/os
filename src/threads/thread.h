@@ -20,6 +20,7 @@ enum thread_status
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
+typedef int pid_t;
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
 
 /* Thread priorities. */
@@ -27,8 +28,15 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
-struct child {
-  struct thread *t;
+struct child_thread {
+  struct thread *thread;
+  struct list_elem elem;
+};
+
+struct file_des
+{
+  int fd;
+  struct file * file;
   struct list_elem elem;
 };
 
@@ -104,12 +112,13 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+    pid_t pid;
     struct list fd_list;
+    struct list children;
     struct semaphore ready;             /* Successfully loaded. */
     struct semaphore to_exit;
     struct semaphore get_status;
     int exit_status;
-    struct list children;
     int next_fd;
     struct file * file;
 #endif
@@ -159,8 +168,14 @@ void thread_set_exit_status (int exit_status);
 int thread_wait (tid_t tid);
 void thread_wait_ready (tid_t tid);
 int thread_get_exit_status (tid_t tid);
+tid_t thread_get_tid(pid_t pid);
+int thread_open_file(struct file * f);
+void thread_close_file(int fd);
+struct file *thread_lookup_fd(int fd);
+pid_t thread_get_pid(tid_t tid);
+tid_t thread_get_tid(pid_t pid);
+struct thread *thread_lookup_tid(tid_t tid);
 int thread_check_exit_status (tid_t tid);
-int thread_get_next_fd(void);
 #endif
 
 #endif /* threads/thread.h */

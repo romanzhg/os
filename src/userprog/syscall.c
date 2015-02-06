@@ -13,14 +13,9 @@
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 
-typedef int pid_t;
+struct lock fs_lock;
 
 static void syscall_handler (struct intr_frame *);
-static int get_arg (const uint8_t *uaddr);
-static bool put_user (uint8_t *udst, uint8_t byte);
-static int get_user (const uint8_t *uaddr);
-static bool get_filename (char* dest, const char* source);
-
 static int write (int fd, const void *buffer, unsigned length);
 static void exit (int status);
 static void halt (void);
@@ -33,27 +28,38 @@ static int filesize (int fd);
 static void seek (int fd, unsigned position);
 static unsigned tell (int fd);
 static void close (int fd);
-
 static pid_t exec (const char *cmd_line);
+
+static int get_arg (const uint8_t *uaddr);
+static bool put_user (uint8_t *udst, uint8_t byte);
+static int get_user (const uint8_t *uaddr);
+static bool get_filename (char* dest, const char* source);
 
 void
 syscall_init (void) 
 {
-  process_init();
+  lock_init(&fs_lock);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
 static bool
 validate_address(const void* p)
 {
+  bool rtn;
   if (!is_user_vaddr(p))
-    return false;
-  struct thread *t;
-  t = thread_current();
-  if (pagedir_get_page(t->pagedir, p) == NULL)
-    return false;
+    rtn = false;
   else
-    return true;
+    {
+      //TODO: disable interrupt
+      enum intr_level old_level = intr_disable ();
+      struct thread *t = thread_current();
+      if (pagedir_get_page(t->pagedir, p) == NULL)
+        rtn = false;
+      else
+        rtn = true;
+      intr_set_level (old_level);
+    }
+  return rtn;
 }
 
 static void
@@ -111,15 +117,18 @@ static bool create (const char *file, unsigned initial_size)
 {
   if (file == NULL)
     exit(-1);
+
   char file_name[15];
   if (!get_filename(file_name, file))
-    return 0;
+    return false;
   return filesys_create (file_name, initial_size);
 }
 
 static bool remove (const char *file)
 {
   char file_name[15];
+  //if (!get_filename(file_name, file))
+  //  return false;
   get_filename(file_name, file);
   return filesys_remove (file_name);
 }
@@ -129,36 +138,35 @@ static int open (const char *file)
   if (file == NULL)
     exit(-1);
   char file_name[15];
-  get_filename(file_name, file);
+  if (!get_filename(file_name, file))
+    return -1;
   struct file * f = filesys_open(file_name);
   if (f == NULL)
     return -1;
-  return process_open_file(f);
+  return thread_open_file(f);
 }
 
 static int filesize (int fd)
 {
-  struct file * file = process_lookup_fd(fd);
+  struct file * file = thread_lookup_fd(fd);
   return file_length(file);
 }
 
 static void seek (int fd, unsigned position)
 {
-  struct file * file = process_lookup_fd(fd);
+  struct file * file = thread_lookup_fd(fd);
   file_seek(file, position);
 }
 
 static unsigned tell (int fd)
 {
-  struct file * file = process_lookup_fd(fd);
+  struct file * file = thread_lookup_fd(fd);
   return file_tell(file);
 }
 
 static void close (int fd)
 {
-  struct file * file = process_lookup_fd(fd);
-  file_close(file);
-  process_close_file(fd);
+  thread_close_file(fd);
 }
 
 static pid_t
@@ -167,8 +175,10 @@ exec (const char *cmd_line)
   if (!validate_address(cmd_line))
     exit(-1);
   tid_t tid = process_execute(cmd_line);
-  int rtn = process_get_pid(tid);
-  return rtn;
+  if (tid != TID_ERROR)
+    return thread_get_pid(tid);
+  else
+    return -1;
 }
 
 static void
@@ -187,7 +197,7 @@ exit(int status)
 static int
 wait (pid_t pid)
 {
-  tid_t tid = process_get_tid(pid);
+  tid_t tid = thread_get_tid(pid);
   if (tid != -1)
     return process_wait(tid);
   else
@@ -199,29 +209,35 @@ write(int fd, const void *buffer, unsigned length) {
   // TODO: is there other ways to validate the address?
   if (!validate_address(buffer))
     exit(-1);
-  if (!is_user_vaddr (buffer))
-    exit(-1);
     
   char *kbuf = (char *) malloc (length);
+  if (kbuf == NULL)
+    return 0;
 
   unsigned i;
   for (i = 0; i< length; i++)
     kbuf[i] = get_user(buffer+i);
 
   int rtn = 0;
-  if (fd == 1) {
-    putbuf(kbuf, length);
-    rtn = length;
-  } else if (fd == 0) {
-    // do nothing
-  } else {
-    struct file * file = process_lookup_fd(fd);
-    if (file == NULL) {
-      free(kbuf);
-      exit(-1);
+  if (fd == 0)
+    {
+      // do nothing
     }
-    rtn = file_write(file, kbuf, length);
-  }
+  else if (fd == 1)
+    {
+      putbuf(kbuf, length);
+      rtn = length;
+    }
+  else
+    {
+      struct file * file = thread_lookup_fd(fd);
+      if (file == NULL)
+        {
+          free(kbuf);
+          exit(-1);
+        }
+      rtn = file_write(file, kbuf, length);
+    }
   free(kbuf);
   return rtn;
 }
@@ -232,22 +248,30 @@ read (int fd, void *buffer, unsigned length){
     exit(-1);
 
   char *kbuf = (char *) malloc (length);
+  if (kbuf == NULL)
+    return 0;
 
   unsigned i;
   int rtn = 0;
-  if (fd == 0){
-    for (i=0; i< length; i++)
-      kbuf[i] = input_getc();
-  } else if (fd == 1) {
-    // do nothing
-  } else {
-    struct file * file = process_lookup_fd(fd);
-    if (file == NULL) {
-      free(kbuf);
-      exit(-1);
+  if (fd == 0)
+    {
+      for (i=0; i< length; i++)
+        kbuf[i] = input_getc();
     }
-    rtn = file_read(file, kbuf, length);
-  }
+  else if (fd == 1)
+    {
+      // do nothing
+    }
+  else
+    {
+      struct file * file = thread_lookup_fd(fd);
+      if (file == NULL)
+        {
+          free(kbuf);
+          exit(-1);
+        }
+      rtn = file_read(file, kbuf, length);
+    }
   for (i=0; i< length; i++)
     put_user(buffer+i, kbuf[i]);
 
@@ -303,19 +327,20 @@ put_user (uint8_t *udst, uint8_t byte)
 static bool
 get_filename (char * dest, const char* source)
 {
-  // TODO: need to verify the source pointer
   if (!validate_address(source)) 
     exit(-1);
+
   int rtn;
   int i;
   for (i = 0; i < 15; i++) {
-    rtn = get_user((const uint8_t *)source + i);
+    rtn = get_user((uint8_t *)source + i);
     if (rtn == -1)
       exit(-1);
     dest[i] = (char) rtn;
     if (dest[i] == '\0')
       break;
   }
+
   if (i == 15)
     return false;
   else

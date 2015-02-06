@@ -22,37 +22,6 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (char *cmdline, void (**eip) (void), void **esp);
-static pid_t allocate_pid (void);
-static void process_close_files(void);
-
-struct list pid_list; 
-struct lock pid_lock;
-
-struct lock fs_lock; 
- 
-struct pid_mapping 
-{ 
-  pid_t pid; 
-  tid_t tid; 
-  struct list_elem elem; 
-}; 
-
-struct file_des
-{ 
-  int fd;
-  struct file * f;
-  struct list_elem elem; 
-}; 
-
-void
-process_init(void)
-{
-  list_init(&pid_list);
-  lock_init(&pid_lock);
-
-  lock_init(&fs_lock);
-}
-
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -74,19 +43,24 @@ process_execute (const char *file_name)
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
-  
+    {
+      palloc_free_page (fn_copy); 
+      return tid;
+    }
+
   thread_wait_ready(tid);
   if (thread_check_exit_status (tid) == -1)
-    return -1;
+    return TID_ERROR;
 
-  struct pid_mapping* mapping = (struct pid_mapping*) malloc(sizeof (struct pid_mapping));
-  mapping->pid = allocate_pid();
-  mapping->tid = tid;
+  struct child_thread * child = malloc(sizeof(struct child_thread)); 
+  if (child == NULL)
+      return TID_ERROR;
 
-  lock_acquire (&pid_lock);
-  list_push_back (&pid_list, &mapping->elem);
-  lock_release (&pid_lock);
+  child->thread = thread_lookup_tid(tid); 
+
+  enum intr_level old_level = intr_disable (); 
+  list_push_back(&thread_current ()->children, &child->elem); 
+  intr_set_level (old_level);
 
   return tid;
 }
@@ -110,14 +84,15 @@ start_process (void *file_name_)
 
   palloc_free_page (file_name_);
 
-  struct thread * t = thread_current();
   /* If load failed, quit. */
   if (!success){
     thread_set_exit_status(-1);
     thread_exit ();
   }
 
-  sema_up(&t->ready);
+  enum intr_level old_level = intr_disable (); 
+  sema_up(&thread_current()->ready);
+  intr_set_level (old_level);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -151,7 +126,6 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
-  process_close_files();
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -269,15 +243,18 @@ load (char *file_name, void (**eip) (void), void **esp)
   bool success = false;
   int i;
 
+  int argc = 0;
+  char * saveptr;
+  char **argv = palloc_get_page (PAL_USER | PAL_ZERO);;
+  if (argv == NULL)
+    goto done;
+
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL) 
     goto done;
   process_activate ();
 
-  int argc = 0;
-  char * saveptr;
-  char **argv = palloc_get_page (PAL_USER | PAL_ZERO);;
   argv[argc] = strtok_r(file_name, " ", &saveptr);
   while ((argv[++argc] = strtok_r(NULL, " ", &saveptr)) != NULL);
 
@@ -364,22 +341,22 @@ load (char *file_name, void (**eip) (void), void **esp)
     }
 
   /* Set up stack. */
-  if (!setup_stack (esp, argc, argv)) {
-    palloc_free_page(argv);
+  if (!setup_stack (esp, argc, argv))
     goto done;
-  }
 
   /* Start address. */
   *eip = (void (*) (void)) ehdr.e_entry;
 
   success = true;
-  palloc_free_page(argv);
 
  done:
-  t = thread_current();
-  t->file = file;
+  if (argv != NULL)
+    palloc_free_page(argv);
+
+  thread_current ()->file = file;
   if (file != NULL)
     file_deny_write(file);
+
   return success;
 }
 
@@ -509,34 +486,22 @@ setup_stack (void **esp, int argc, char** argv)
           *esp = PHYS_BASE;
           int j = 0;
           for (j = argc - 1; j >= 0; j--) { 
-              //printf("esp value: %p", *esp);
               *esp -= (strlen(argv[j]) + 1); 
-              //printf("esp value: %p", *esp);
-              //printf("argv value: %s", (char *) argv[j]);
-              //printf("argv length: %d", strlen(argv[j]));
               memcpy(*esp, argv[j], (strlen(argv[j])+1));
-              //*((char *)addrs + j) = *esp;
               tmp_addrs[j] = *esp;
-              //printf("string value: %s", (char *) *esp);
             }
-          // no word align, put a zero here
           *esp -= 4;
           // the page was initialized as zero, no need to set it
           //printf("0x%x", *(uint32_t *)(*esp));
 
-          
-          //printf("esp value: %p\n", *esp);
           for (j = argc - 1; j >= 0; j--)
             {
               *esp -= 4;
-              //*((uint32_t *)*esp) = *(addrs + j);
               *((uint32_t *) *esp) = (uint32_t) tmp_addrs[j];
             }
 
           *esp -= 4; 
-          //printf("esp value: %p\n", *esp);
           *((uint32_t *)*esp) = (uint32_t)(((uint32_t*) *esp) + 1); 
-          //printf("value: %p\n", *(uint32_t *)*esp);
 
           *esp -= 4;
           *((int32_t *)*esp) = argc;
@@ -568,137 +533,4 @@ install_page (void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
-}
-
-static pid_t
-allocate_pid (void)
-{
-  static pid_t next_pid = 1;
-  pid_t pid;
-
-  lock_acquire (&pid_lock);
-  pid = next_pid++;
-  lock_release (&pid_lock);
-
-  return pid;
-}
-
-pid_t
-process_get_pid(tid_t tid)
-{
-  pid_t pid = -1;
-  lock_acquire (&pid_lock);
-  struct list_elem *e;
-  for (e = list_begin (&pid_list); e != list_end (&pid_list);
-       e = list_next (e))
-    {
-      struct pid_mapping *p = list_entry (e, struct pid_mapping, elem);
-      if (p->tid == tid) {
-        pid = p->pid;
-      }
-    }
-  lock_release(&pid_lock);
-  return pid;
-}
-
-tid_t
-process_get_tid(pid_t pid)
-{
-  tid_t tid = -1;
-  lock_acquire (&pid_lock);
-  struct list_elem *e;
-  for (e = list_begin (&pid_list); e != list_end (&pid_list);
-       e = list_next (e))
-    {
-      struct pid_mapping *p = list_entry (e, struct pid_mapping, elem);
-      if (p->pid == pid) {
-        tid = p->tid;
-      }
-    }
-  lock_release(&pid_lock);
-  return tid;
-}
-
-void
-process_remove_tid(tid_t tid)
-{
-  lock_acquire (&pid_lock);
-  struct list_elem *e;
-  for (e = list_begin (&pid_list); e != list_end (&pid_list);)
-    {
-      struct pid_mapping *p = list_entry (e, struct pid_mapping, elem);
-      if (p->tid == tid) {
-        e = list_remove(e);
-        free(p);
-      } else {
-        e = list_next(e);
-      }
-    }
-  lock_release(&pid_lock);
-}
-
-int process_open_file(struct file * f) {
-  struct file_des * file_des = malloc (sizeof (struct file_des));
-  file_des->f = f;
-  file_des->fd = thread_get_next_fd();
-
-  enum intr_level old_level = intr_disable ();
-  struct list * fd_list = &thread_current()->fd_list;
-  list_push_back(fd_list, &file_des->elem);
-  intr_set_level (old_level);
-
-  return file_des->fd;
-}
-
-static void
-process_close_files(void) {
-  enum intr_level old_level = intr_disable ();
-  struct list * fd_list = &thread_current()->fd_list;
-  struct list_elem *e;
-  for (e = list_begin (fd_list); e != list_end (fd_list);)
-    {
-      struct file_des *file_des = list_entry (e, struct file_des, elem);
-      e = list_remove(e);
-      file_close(file_des->f);
-      free(file_des);
-    }
-  intr_set_level (old_level);
-}
-void process_close_file(int fd) {
-  enum intr_level old_level = intr_disable ();
-  struct list * fd_list = &thread_current()->fd_list;
-  struct list_elem *e;
-  for (e = list_begin (fd_list); e != list_end (fd_list);
-       e = list_next (e))
-    {
-      struct file_des *file_des = list_entry (e, struct file_des, elem);
-      if (file_des->fd == fd){
-        e = list_remove(e);
-        free(file_des);
-        break;
-      }
-      else
-        e = list_next (e);
-    }
-  intr_set_level (old_level);
-}
-
-struct file * process_lookup_fd(int fd)
-{
-  struct file * rtn = NULL;
-
-  enum intr_level old_level = intr_disable ();
-  struct list * fd_list = &thread_current()->fd_list;
-  struct list_elem *e;
-  for (e = list_begin (fd_list); e != list_end (fd_list);
-       e = list_next (e))
-    {
-      struct file_des *file_des = list_entry (e, struct file_des, elem);
-      if (file_des->fd == fd){
-        rtn = file_des->f;
-        break;
-      }
-    }
-  intr_set_level (old_level);
-  return rtn;
 }
