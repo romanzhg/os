@@ -206,14 +206,6 @@ write (int fd, const void *buffer, unsigned length) {
   if (!is_valid_uaddr (buffer, length))
     exit(-1);
     
-  char *kbuf = (char *) malloc (length);
-  if (kbuf == NULL)
-    return 0;
-
-  unsigned i;
-  for (i = 0; i< length; i++)
-    kbuf[i] =  *(((char *)buffer) + i);
-
   int rtn = 0;
   if (fd == 0)
     {
@@ -221,7 +213,7 @@ write (int fd, const void *buffer, unsigned length) {
     }
   else if (fd == 1)
     {
-      putbuf (kbuf, length);
+      putbuf (buffer, length);
       rtn = length;
     }
   else
@@ -229,12 +221,10 @@ write (int fd, const void *buffer, unsigned length) {
       struct file * file = thread_lookup_fd (fd);
       if (file == NULL)
         {
-          free (kbuf);
           exit (-1);
         }
-      rtn = file_write (file, kbuf, length);
+      rtn = file_write (file, buffer, length);
     }
-  free (kbuf);
   return rtn;
 }
 
@@ -243,16 +233,13 @@ read (int fd, void *buffer, unsigned length){
   if (!is_user_vaddr (buffer))
     exit(-1);
 
-  char *kbuf = (char *) malloc (length);
-  if (kbuf == NULL)
-    return 0;
-
   unsigned i;
   int rtn = 0;
   if (fd == 0)
     {
       for (i = 0; i < length; i++)
-        kbuf[i] = input_getc ();
+        // input_getc would block if the buffer is empty
+        *((char *) buffer + i) = input_getc ();
     }
   else if (fd == 1)
     {
@@ -263,16 +250,10 @@ read (int fd, void *buffer, unsigned length){
       struct file * file = thread_lookup_fd (fd);
       if (file == NULL)
         {
-          free (kbuf);
           exit (-1);
         }
-      rtn = file_read (file, kbuf, length);
+      rtn = file_read (file, buffer, length);
     }
-
-  for (i = 0; i < length; i++)
-    *((char *) buffer + i) = kbuf[i];
-
-  free (kbuf);
   return rtn;
 }
 
