@@ -13,6 +13,12 @@
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 
+/*
+  Note: Pints kernel has mapped the user page to it's own page table, so it's
+  possible to read the user data directly.
+
+*/
+
 struct lock fs_lock;
 
 static void syscall_handler (struct intr_frame *);
@@ -30,28 +36,31 @@ static unsigned tell (int fd);
 static void close (int fd);
 static pid_t exec (const char *cmd_line);
 
-static int get_arg (const uint8_t *uaddr);
-static bool get_filename (char* dest, const char* source);
+static void get_arg (const uint8_t *uaddr, int * args);
+static bool is_valid_filename (const char* source);
+static bool is_valid_uaddr (const void* p, uint32_t range);
 
 void
 syscall_init (void) 
 {
-  lock_init(&fs_lock);
+  lock_init (&fs_lock);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
+// validate the address is a correct user address, start from p and
+// end at p + range
 static bool
-validate_address(const void* p)
+is_valid_uaddr (const void* p, uint32_t range)
 {
-  bool rtn;
-  if (!is_user_vaddr(p))
+  bool rtn = false;
+  if (!is_user_vaddr (p) || !is_user_vaddr (p + range))
     rtn = false;
   else
     {
-      //TODO: disable interrupt
       enum intr_level old_level = intr_disable ();
-      struct thread *t = thread_current();
-      if (pagedir_get_page(t->pagedir, p) == NULL)
+      struct thread *t = thread_current ();
+      if ((pagedir_get_page (t->pagedir, p) == NULL)
+          || (pagedir_get_page (t->pagedir, p + range) == NULL))
         rtn = false;
       else
         rtn = true;
@@ -63,48 +72,49 @@ validate_address(const void* p)
 static void
 syscall_handler (struct intr_frame *f) 
 {
-  int* esp = f->esp;
-  int syscall_num = get_arg((uint8_t *)esp);
-  switch (syscall_num)
+  int32_t args[4];
+  get_arg((uint8_t *)f->esp, args);
+
+  switch (args[0])
     {
       case SYS_HALT:
         halt ();
         break;
       case SYS_EXIT:
-        exit(get_arg((uint8_t *)(esp + 1)));
+        exit (args[1]);
         break;
       case SYS_WAIT:
-        f->eax = wait ((int)get_arg((uint8_t *)(esp + 1)));
+        f->eax = wait (args[1]);
         break;
       case SYS_WRITE:
-        f->eax = write(get_arg((uint8_t *)(esp + 1)), (void *)get_arg((uint8_t *)(esp + 2)), get_arg((uint8_t *)(esp + 3)));
+        f->eax = write (args[1], (void *)args[2], args[3]);
         break;
       case SYS_EXEC:
-        f->eax = exec((char *)get_arg((uint8_t *)(esp + 1)));
+        f->eax = exec ((char *) args[1]);
         break;
       case SYS_READ:
-        f->eax = read(get_arg((uint8_t *)(esp + 1)), (void *)get_arg((uint8_t *)(esp + 2)), get_arg((uint8_t *)(esp + 3)));
+        f->eax = read (args[1], (void *)args[2], args[3]);
         break;
       case SYS_CREATE:
-        f->eax = create((const char *)get_arg((uint8_t *)(esp + 1)), get_arg((uint8_t *)(esp + 2)));
+        f->eax = create ((const char *)args[1], args[2]);
         break;
       case SYS_REMOVE:
-        f->eax = remove((const char *)get_arg((uint8_t *)(esp + 1)));
+        f->eax = remove ((const char *)args[1]);
         break;
       case SYS_OPEN:
-        f->eax = open((const char *)get_arg((uint8_t *)(esp + 1)));
+        f->eax = open ((const char *)args[1]);
         break;
       case SYS_FILESIZE:
-        f->eax = filesize(get_arg((uint8_t *)(esp + 1)));
+        f->eax = filesize (args[1]);
         break;
       case SYS_SEEK:
-        seek(get_arg((uint8_t *)(esp + 1)), get_arg((uint8_t *)(esp + 2)));
+        seek (args[1], args[2]);
         break;
       case SYS_TELL:
-        f->eax = tell(get_arg((uint8_t *)(esp + 1)));
+        f->eax = tell (args[1]);
         break;
       case SYS_CLOSE:
-        close(get_arg((uint8_t *)(esp + 1)));
+        close (args[1]);
         break;
       default:
         break;
@@ -113,66 +123,57 @@ syscall_handler (struct intr_frame *f)
 
 static bool create (const char *file, unsigned initial_size)
 {
-  if (file == NULL)
-    exit(-1);
-
-  char file_name[15];
-  if (!get_filename(file_name, file))
-    return false;
-  return filesys_create (file_name, initial_size);
+  is_valid_filename (file);
+  return filesys_create (file, initial_size);
 }
 
 static bool remove (const char *file)
 {
-  char file_name[15];
-  get_filename(file_name, file);
-  return filesys_remove (file_name);
+  is_valid_filename (file);
+  return filesys_remove (file);
 }
 
 static int open (const char *file)
 {
-  if (file == NULL)
-    exit(-1);
-  char file_name[15];
-  if (!get_filename(file_name, file))
-    return -1;
-  struct file * f = filesys_open(file_name);
+  is_valid_filename (file);
+  struct file * f = filesys_open (file);
   if (f == NULL)
     return -1;
-  return thread_open_file(f);
+  return thread_open_file (f);
 }
 
 static int filesize (int fd)
 {
-  struct file * file = thread_lookup_fd(fd);
-  return file_length(file);
+  struct file * file = thread_lookup_fd (fd);
+  return file_length (file);
 }
 
 static void seek (int fd, unsigned position)
 {
-  struct file * file = thread_lookup_fd(fd);
-  file_seek(file, position);
+  struct file * file = thread_lookup_fd (fd);
+  file_seek (file, position);
 }
 
 static unsigned tell (int fd)
 {
-  struct file * file = thread_lookup_fd(fd);
-  return file_tell(file);
+  struct file * file = thread_lookup_fd (fd);
+  return file_tell (file);
 }
 
 static void close (int fd)
 {
-  thread_close_file(fd);
+  thread_close_file (fd);
 }
 
 static pid_t
 exec (const char *cmd_line)
 {
-  if (!validate_address(cmd_line))
+  // TODO: validate the whole command line
+  if (!is_valid_uaddr (cmd_line, 0))
     exit(-1);
-  tid_t tid = process_execute(cmd_line);
+  tid_t tid = process_execute (cmd_line);
   if (tid != TID_ERROR)
-    return thread_get_pid(tid);
+    return thread_get_pid (tid);
   else
     return -1;
 }
@@ -184,25 +185,25 @@ halt (void)
 }
 
 static void
-exit(int status)
+exit (int status)
 {
-  thread_set_exit_status(status);
-  thread_exit();
+  thread_set_exit_status (status);
+  thread_exit ();
 }
 
 static int
 wait (pid_t pid)
 {
-  tid_t tid = thread_get_tid(pid);
+  tid_t tid = thread_get_tid (pid);
   if (tid != -1)
-    return process_wait(tid);
+    return process_wait (tid);
   else
     return -1;
 }
 
 static int
-write(int fd, const void *buffer, unsigned length) {
-  if (!validate_address(buffer))
+write (int fd, const void *buffer, unsigned length) {
+  if (!is_valid_uaddr (buffer, length))
     exit(-1);
     
   char *kbuf = (char *) malloc (length);
@@ -220,20 +221,20 @@ write(int fd, const void *buffer, unsigned length) {
     }
   else if (fd == 1)
     {
-      putbuf(kbuf, length);
+      putbuf (kbuf, length);
       rtn = length;
     }
   else
     {
-      struct file * file = thread_lookup_fd(fd);
+      struct file * file = thread_lookup_fd (fd);
       if (file == NULL)
         {
-          free(kbuf);
-          exit(-1);
+          free (kbuf);
+          exit (-1);
         }
-      rtn = file_write(file, kbuf, length);
+      rtn = file_write (file, kbuf, length);
     }
-  free(kbuf);
+  free (kbuf);
   return rtn;
 }
 
@@ -250,8 +251,8 @@ read (int fd, void *buffer, unsigned length){
   int rtn = 0;
   if (fd == 0)
     {
-      for (i=0; i< length; i++)
-        kbuf[i] = input_getc();
+      for (i = 0; i < length; i++)
+        kbuf[i] = input_getc ();
     }
   else if (fd == 1)
     {
@@ -259,52 +260,52 @@ read (int fd, void *buffer, unsigned length){
     }
   else
     {
-      struct file * file = thread_lookup_fd(fd);
+      struct file * file = thread_lookup_fd (fd);
       if (file == NULL)
         {
-          free(kbuf);
-          exit(-1);
+          free (kbuf);
+          exit (-1);
         }
-      rtn = file_read(file, kbuf, length);
+      rtn = file_read (file, kbuf, length);
     }
-  for (i=0; i< length; i++)
+
+  for (i = 0; i < length; i++)
     *((char *) buffer + i) = kbuf[i];
 
-  free(kbuf);
+  free (kbuf);
   return rtn;
 }
 
-static int
-get_arg (const uint8_t *uaddr)
+// get argument for system call, which are 16 bytes (4 integer)
+static void
+get_arg (const uint8_t *uaddr, int * args)
 {
-  if (!validate_address(uaddr)) 
+  if (!is_valid_uaddr (uaddr, 4 * 4)) 
     exit(-1);
 
-  int result;
-  uint8_t *buf = (uint8_t *) &result;
-  int i = 0;
-  for (i = 0; i < 4; i++)
+  uint8_t *buf = (uint8_t *) args;
+  int i, j;
+  for (j = 0; j < 4; j++)
     {
-      buf[i] = *((uint8_t *)uaddr + i);
+      for (i = 0; i < 4; i++)
+        {
+          buf[i + j * 4] = *((uint8_t *)uaddr + i + j * 4);
+        }
     }
-  return result;
 }
 
+// validate a file name, which is limited to 14 chars
 static bool
-get_filename (char * dest, const char* source)
+is_valid_filename (const char* source)
 {
-  if (!validate_address(source)) 
-    exit(-1);
-
   int i;
-  for (i = 0; i < 15; i++) {
-    dest[i] = *((char *)source + i);
-    if (dest[i] == '\0')
-      break;
-  }
+  for (i = 0; i < 15; i++)
+    {
+      if (!is_valid_uaddr (source + i, 0)) 
+        exit(-1);
+      if (*((char *)source + i) == '\0')
+        break;
+    }
 
-  if (i == 15)
-    return false;
-  else
-    return true;
+  return i != 15;
 }
