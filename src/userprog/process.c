@@ -482,7 +482,10 @@ setup_stack (void **esp, int argc, char** argv)
 {
   uint8_t *kpage;
   bool success = false;
-  char * tmp_addrs[128];
+
+  char ** tmp_addrs = (char **) palloc_get_page (PAL_USER | PAL_ZERO);
+  if (tmp_addrs == NULL)
+    return success;
 
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
@@ -495,7 +498,7 @@ setup_stack (void **esp, int argc, char** argv)
           for (j = argc - 1; j >= 0; j--) { 
               *esp -= (strlen(argv[j]) + 1); 
               memcpy(*esp, argv[j], (strlen(argv[j])+1));
-              tmp_addrs[j] = *esp;
+              tmp_addrs[j] = (char *) *esp;
             }
 
           // alignment
@@ -522,6 +525,7 @@ setup_stack (void **esp, int argc, char** argv)
       else
         palloc_free_page (kpage);
     }
+  palloc_free_page(tmp_addrs);
   return success;
 }
 
