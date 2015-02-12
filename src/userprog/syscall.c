@@ -19,8 +19,6 @@
 
 */
 
-struct lock fs_lock;
-
 static void syscall_handler (struct intr_frame *);
 static int write (int fd, const void *buffer, unsigned length);
 static void exit (int status);
@@ -124,19 +122,27 @@ syscall_handler (struct intr_frame *f)
 static bool create (const char *file, unsigned initial_size)
 {
   is_valid_filename (file);
-  return filesys_create (file, initial_size);
+  lock_acquire (&fs_lock);
+  bool rtn = filesys_create (file, initial_size);
+  lock_release (&fs_lock);
+  return rtn;
 }
 
 static bool remove (const char *file)
 {
   is_valid_filename (file);
-  return filesys_remove (file);
+  lock_acquire (&fs_lock);
+  bool rtn = filesys_remove (file); 
+  lock_release (&fs_lock);
+  return rtn;
 }
 
 static int open (const char *file)
 {
   is_valid_filename (file);
+  lock_acquire (&fs_lock);
   struct file * f = filesys_open (file);
+  lock_release (&fs_lock);
   if (f == NULL)
     return -1;
   return thread_open_file (f);
@@ -145,19 +151,27 @@ static int open (const char *file)
 static int filesize (int fd)
 {
   struct file * file = thread_lookup_fd (fd);
-  return file_length (file);
+  lock_acquire (&fs_lock);
+  int rtn = file_length (file);
+  lock_release (&fs_lock);
+  return rtn;
 }
 
 static void seek (int fd, unsigned position)
 {
   struct file * file = thread_lookup_fd (fd);
+  lock_acquire (&fs_lock);
   file_seek (file, position);
+  lock_release (&fs_lock);
 }
 
 static unsigned tell (int fd)
 {
   struct file * file = thread_lookup_fd (fd);
-  return file_tell (file);
+  lock_acquire (&fs_lock);
+  unsigned int rtn = file_tell (file);
+  lock_release (&fs_lock);
+  return rtn;
 }
 
 static void close (int fd)
@@ -168,9 +182,9 @@ static void close (int fd)
 static pid_t
 exec (const char *cmd_line)
 {
-  // TODO: validate the whole command line
   if (!is_valid_uaddr (cmd_line, 0))
     exit(-1);
+  // TODO: validate the command line argument in process_execute
   tid_t tid = process_execute (cmd_line);
   if (tid != TID_ERROR)
     return thread_get_pid (tid);
@@ -223,7 +237,9 @@ write (int fd, const void *buffer, unsigned length) {
         {
           exit (-1);
         }
+      lock_acquire (&fs_lock);
       rtn = file_write (file, buffer, length);
+      lock_release (&fs_lock);
     }
   return rtn;
 }
@@ -252,7 +268,9 @@ read (int fd, void *buffer, unsigned length){
         {
           exit (-1);
         }
+      lock_acquire (&fs_lock);
       rtn = file_read (file, buffer, length);
+      lock_release (&fs_lock);
     }
   return rtn;
 }

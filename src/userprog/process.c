@@ -23,6 +23,8 @@
 static thread_func start_process NO_RETURN;
 static bool load (char *cmdline, void (**eip) (void), void **esp);
 
+struct lock fs_lock;
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -260,6 +262,7 @@ load (char *file_name, void (**eip) (void), void **esp)
 
   strlcpy (t->name, argv[0], sizeof t->name);
 
+  lock_acquire (&fs_lock);
   /* Open executable file. */
   file = filesys_open (argv[0]);
   if (file == NULL) 
@@ -350,6 +353,8 @@ load (char *file_name, void (**eip) (void), void **esp)
   success = true;
 
  done:
+  lock_release (&fs_lock);
+
   if (argv != NULL)
     palloc_free_page(argv);
 
