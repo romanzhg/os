@@ -50,18 +50,18 @@ process_execute (const char *file_name)
       return tid;
     }
 
-  thread_wait_ready(tid);
+  thread_wait_ready (tid);
   if (thread_check_exit_status (tid) == -1)
     return TID_ERROR;
 
-  struct child_thread * child = malloc(sizeof(struct child_thread)); 
+  struct child_thread * child = malloc (sizeof (struct child_thread));
   if (child == NULL)
       return TID_ERROR;
 
-  child->thread = thread_lookup_tid(tid); 
+  child->thread = thread_lookup_tid (tid);
 
   enum intr_level old_level = intr_disable (); 
-  list_push_back(&thread_current ()->children, &child->elem); 
+  list_push_back (&thread_current ()->children, &child->elem);
   intr_set_level (old_level);
 
   return tid;
@@ -87,13 +87,14 @@ start_process (void *file_name_)
   palloc_free_page (file_name_);
 
   /* If load failed, quit. */
-  if (!success){
-    thread_set_exit_status(-1);
-    thread_exit ();
-  }
+  if (!success)
+    {
+      thread_set_exit_status (-1);
+      thread_exit ();
+    }
 
   enum intr_level old_level = intr_disable (); 
-  sema_up(&thread_current()->ready);
+  sema_up (&thread_current()->ready);
   intr_set_level (old_level);
 
   /* Start the user process by simulating a return from an
@@ -118,7 +119,7 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid) 
 {
-  return thread_wait(child_tid);
+  return thread_wait (child_tid);
 }
 
 /* Free the current process's resources. */
@@ -248,6 +249,7 @@ load (char *file_name, void (**eip) (void), void **esp)
   int argc = 0;
   char * saveptr;
   char **argv = palloc_get_page (PAL_USER | PAL_ZERO);;
+
   if (argv == NULL)
     goto done;
 
@@ -358,7 +360,7 @@ load (char *file_name, void (**eip) (void), void **esp)
   if (argv != NULL)
     palloc_free_page(argv);
 
-  thread_current ()->file = file;
+  t->file = file;
   if (file != NULL)
     file_deny_write(file);
 
@@ -495,9 +497,11 @@ setup_stack (void **esp, int argc, char** argv)
               memcpy(*esp, argv[j], (strlen(argv[j])+1));
               tmp_addrs[j] = *esp;
             }
+          // alignment
+          while ((* (int *) esp) % 4 != 0)
+            (*esp)--;
+
           *esp -= 4;
-          // the page was initialized as zero, no need to set it
-          //printf("0x%x", *(uint32_t *)(*esp));
 
           for (j = argc - 1; j >= 0; j--)
             {
