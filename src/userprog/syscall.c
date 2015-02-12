@@ -16,7 +16,6 @@
 /*
   Note: Pints kernel has mapped the user page to it's own page table, so it's
   possible to read the user data directly.
-
 */
 
 static void syscall_handler (struct intr_frame *);
@@ -37,6 +36,7 @@ static pid_t exec (const char *cmd_line);
 static void get_arg (const uint8_t *uaddr, int * args);
 static bool is_valid_filename (const char* source);
 static bool is_valid_uaddr (const void* p, uint32_t range);
+static bool is_valid_cmdline (const char* source);
 
 void
 syscall_init (void) 
@@ -142,7 +142,7 @@ static bool remove (const char *file)
 static int open (const char *file)
 {
   if (!is_valid_filename (file))
-    return false;
+    return -1;
   lock_acquire (&fs_lock);
   struct file * f = filesys_open (file);
   lock_release (&fs_lock);
@@ -185,9 +185,8 @@ static void close (int fd)
 static pid_t
 exec (const char *cmd_line)
 {
-  if (!is_valid_uaddr (cmd_line, 0))
+  if (!is_valid_cmdline(cmd_line))
     exit(-1);
-  // TODO: validate the command line argument in process_execute
   tid_t tid = process_execute (cmd_line);
   if (tid != TID_ERROR)
     return thread_get_pid (tid);
@@ -310,4 +309,19 @@ is_valid_filename (const char* source)
     }
 
   return i != 15;
+}
+
+static bool
+is_valid_cmdline (const char* source)
+{
+  int i;
+  for (i = 0; i < PGSIZE; i++)
+    {
+      if (!is_valid_uaddr (source + i, 0)) 
+        exit(-1);
+      if (*((char *)source + i) == '\0')
+        break;
+    }
+
+  return i != PGSIZE;
 }
