@@ -121,7 +121,8 @@ syscall_handler (struct intr_frame *f)
 
 static bool create (const char *file, unsigned initial_size)
 {
-  is_valid_filename (file);
+  if (!is_valid_filename (file))
+    return false;
   lock_acquire (&fs_lock);
   bool rtn = filesys_create (file, initial_size);
   lock_release (&fs_lock);
@@ -130,7 +131,8 @@ static bool create (const char *file, unsigned initial_size)
 
 static bool remove (const char *file)
 {
-  is_valid_filename (file);
+  if (!is_valid_filename (file))
+    return false;
   lock_acquire (&fs_lock);
   bool rtn = filesys_remove (file); 
   lock_release (&fs_lock);
@@ -139,7 +141,8 @@ static bool remove (const char *file)
 
 static int open (const char *file)
 {
-  is_valid_filename (file);
+  if (!is_valid_filename (file))
+    return false;
   lock_acquire (&fs_lock);
   struct file * f = filesys_open (file);
   lock_release (&fs_lock);

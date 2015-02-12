@@ -246,10 +246,11 @@ load (char *file_name, void (**eip) (void), void **esp)
   bool success = false;
   int i;
 
+  lock_acquire (&fs_lock);
+
   int argc = 0;
   char * saveptr;
   char **argv = palloc_get_page (PAL_USER | PAL_ZERO);;
-
   if (argv == NULL)
     goto done;
 
@@ -264,7 +265,6 @@ load (char *file_name, void (**eip) (void), void **esp)
 
   strlcpy (t->name, argv[0], sizeof t->name);
 
-  lock_acquire (&fs_lock);
   /* Open executable file. */
   file = filesys_open (argv[0]);
   if (file == NULL) 
@@ -497,6 +497,7 @@ setup_stack (void **esp, int argc, char** argv)
               memcpy(*esp, argv[j], (strlen(argv[j])+1));
               tmp_addrs[j] = *esp;
             }
+
           // alignment
           while ((* (int *) esp) % 4 != 0)
             (*esp)--;
