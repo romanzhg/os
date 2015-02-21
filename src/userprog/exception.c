@@ -150,8 +150,12 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  //printf("here 0\n");
-  if (user && not_present)
+  // handle stack growth: if the faulted address is within one page below esp
+  // and the newly allocated page with 8MB below PHYBASE, then allocate a new
+  // page 
+
+  // bring the evicted page in
+  if (not_present)
     {
       if (page_fault_handler (&thread_current ()->pages, fault_addr))
         return;
