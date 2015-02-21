@@ -7,6 +7,7 @@
 #include "threads/synch.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+#include "lib/kernel/hash.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -121,6 +122,7 @@ struct thread
     int exit_status;
     int next_fd;
     struct file * file;
+    struct hash pages;
 #endif
 
     /* Owned by thread.c. */

@@ -14,6 +14,7 @@
 #ifdef USERPROG
 #include "userprog/process.h"
 #include "threads/malloc.h"
+#include "vm/page.h"
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -192,6 +193,7 @@ thread_create (const char *name, int priority,
 
 #ifdef USERPROG
   t->pid = allocate_pid ();
+  hash_init (&t->pages, page_hash, page_less, NULL);
 #endif
 
   /* Stack frame for kernel_thread(). */
