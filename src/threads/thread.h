@@ -22,6 +22,7 @@ enum thread_status
    You can redefine this to whatever type you like. */
 typedef int tid_t;
 typedef int pid_t;
+typedef int mapid_t;
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
 
 /* Thread priorities. */
@@ -43,9 +44,11 @@ struct file_des
 
 struct mmap_info
 {
+  mapid_t mapid;
   int fd;
   void *start;          /* The starting virtual address */
   size_t length;
+  struct list_elem elem;
 };
 
 /* A kernel thread or user process.
@@ -128,6 +131,7 @@ struct thread
     struct semaphore get_status;
     int exit_status;
     int next_fd;
+    int next_mmap_id;
     struct file * file;
     struct hash pages;
     void * uesp;
@@ -179,14 +183,16 @@ void thread_set_exit_status (int exit_status);
 int thread_wait (tid_t tid);
 void thread_wait_ready (tid_t tid);
 int thread_get_exit_status (tid_t tid);
-tid_t thread_get_tid(pid_t pid);
-int thread_open_file(struct file * f);
-void thread_close_file(int fd);
-struct file *thread_lookup_fd(int fd);
-pid_t thread_get_pid(tid_t tid);
-tid_t thread_get_tid(pid_t pid);
+tid_t thread_get_tid (pid_t pid);
+int thread_open_file (struct file * f);
+void thread_close_file (int fd);
+struct file *thread_lookup_fd (int fd);
+pid_t thread_get_pid (tid_t tid);
+tid_t thread_get_tid (pid_t pid);
 struct thread *thread_lookup_tid(tid_t tid);
 int thread_check_exit_status (tid_t tid);
+int thread_mmap (struct mmap_info mmap_info);
+void thread_munmap (mapid_t mapping);
 #endif
 
 #endif /* threads/thread.h */

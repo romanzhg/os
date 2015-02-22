@@ -23,6 +23,25 @@ page_destory (struct hash * pages)
   hash_destroy (pages, page_destructor);
 }
 
+// Remove the page at vaddr. Return true if the page was actually removed.
+bool
+page_remove (struct hash * pages, void *vaddr)
+{
+  struct page p;
+  struct hash_elem *e;
+
+  p.vaddr = vaddr;
+
+  e = hash_delete (pages, &p.hash_elem);
+  if (e == NULL)
+    return false;
+  else
+    {
+      free (hash_entry (e, struct page, hash_elem));
+      return true;
+    }
+}
+
 // add a mapping to the supplemental page table, from virtual address to
 // where the data actually resides
 // called when add a new mapping/frame table need to evict a page

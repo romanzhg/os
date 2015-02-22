@@ -263,3 +263,16 @@ invalidate_pagedir (uint32_t *pd)
       pagedir_activate (pd);
     } 
 }
+
+// Remove the page from memory
+bool
+pagedir_remove (uint32_t *pd, void *vaddr)
+{
+  void * kpage = pagedir_get_page (pd, vaddr);
+  if (kpage == NULL)
+    return false;
+
+  pagedir_clear_page (pd, vaddr);
+  frame_free(kpage);
+  return true;
+}

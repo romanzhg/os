@@ -12,6 +12,7 @@
 #include "userprog/pagedir.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+#include "vm/page.h"
 
 /*
   Note: Pints kernel has mapped the user page to it's own page table, so it's
@@ -162,7 +163,8 @@ static int open (const char *file)
   return thread_open_file (f);
 }
 
-static mapid_t mmap (int fd, void *addr)
+static mapid_t
+mmap (int fd, void *addr)
 {
   if (fd == 0 || fd == 1)
     return -1;
@@ -170,6 +172,7 @@ static mapid_t mmap (int fd, void *addr)
   if (pg_ofs (addr) != 0 || addr == 0)
     return -1;
 
+  struct file * file = file_reopen (thread_lookup_fd (fd));
   lock_acquire (&fs_lock);
   int file_len = file_length (file);
   lock_release (&fs_lock);
@@ -177,12 +180,40 @@ static mapid_t mmap (int fd, void *addr)
   if (file_len  == 0)
     return -1;
   
-  return 0;
+  struct mmap_info mmap_info;
+  mmap_info.fd = fd;
+  mmap_info.start = addr;
+  mmap_info.length = file_len;
+
+  off_t ofs = 0;
+  while (file_len > 0)
+    {
+      size_t page_read_bytes = file_len < PGSIZE ? file_len : PGSIZE;
+
+      struct fs_addr fs_addr;
+      fs_addr.file = file;
+      fs_addr.ofs = ofs;
+      fs_addr.length = page_read_bytes;
+      // TODO: should it always be true?
+      fs_addr.writable = true;
+
+      // TODO: need to release the resources already allocated in this while loop
+      if (!page_add_fs (&thread_current ()->pages, addr, fs_addr))
+        return -1;
+
+      ofs += PGSIZE;
+      file_len -= page_read_bytes;
+      addr += PGSIZE;
+    }
+
+  int rtn = thread_mmap (mmap_info);
+  return rtn;
 }
 
-static void munmap (mapid_t mapping)
+static void
+munmap (mapid_t mapping)
 {
-
+  thread_munmap(mapping);
 }
 
 static int filesize (int fd)

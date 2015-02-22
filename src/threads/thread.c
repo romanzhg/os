@@ -12,9 +12,11 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #ifdef USERPROG
-#include "userprog/process.h"
 #include "threads/malloc.h"
+#include "userprog/pagedir.h"
+#include "userprog/process.h"
 #include "vm/page.h"
+#include "vm/frame.h"
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -75,7 +77,8 @@ void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 #ifdef USERPROG
 static pid_t allocate_pid (void);
-static int thread_get_next_fd(void);
+static int thread_get_next_fd (void);
+static int thread_get_next_mmap_id (void);
 #endif
 
 /* Initializes the threading system by transforming the code
@@ -645,6 +648,7 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->fd_list);
   list_init(&t->mmap_list);
   t->next_fd = 2;
+  t->next_mmap_id = 1;
 #endif
 
   old_level = intr_disable ();
@@ -829,11 +833,13 @@ thread_lookup_fd (int fd)
 static int
 thread_get_next_fd (void)
 {
-  int rtn;
-  enum intr_level old_level = intr_disable ();
-  rtn = thread_current()->next_fd++;
-  intr_set_level (old_level);
-  return rtn;
+  return thread_current()->next_fd++;
+}
+
+static int
+thread_get_next_mmap_id (void)
+{
+  return thread_current()->next_mmap_id++;
 }
 
 pid_t
@@ -899,4 +905,55 @@ allocate_pid (void)
 
   return pid;
 }
+
+int
+thread_mmap (struct mmap_info mmap_info)
+{
+  struct mmap_info *m = malloc (sizeof (struct mmap_info));
+  if (m == NULL)
+    return -1;
+
+  *m = mmap_info;
+  m->mapid = thread_get_next_mmap_id();
+  list_push_back (&thread_current ()->mmap_list, &m->elem);
+  return m->mapid;
+}
+
+void
+thread_munmap (mapid_t mapping)
+{
+  struct mmap_info * mmap_info = NULL;
+
+  struct list_elem *e;
+  for (e = list_begin (&thread_current () -> mmap_list); e != list_end (&thread_current () -> mmap_list); e = list_next (e))
+    {
+      struct mmap_info * tmp = list_entry (e, struct mmap_info, elem);
+      if (tmp->mapid == mapping){
+        mmap_info = tmp;
+        break;
+      }
+    }
+
+  if (mmap_info == NULL)
+    return;
+
+  int file_len = mmap_info->length;
+  uint32_t ofs = 0;
+  lock_acquire (&frame_lock);
+  while (file_len > 0)
+    {
+      void * addr = mmap_info->start + ofs;
+      if (page_remove (&thread_current ()->pages, addr))
+        return;
+      else if (pagedir_remove (thread_current ()->pagedir, addr))
+        return;
+      else{
+        printf("should not be here\n");
+        ASSERT(false);
+      }
+    }
+  lock_release (&frame_lock);
+  free (mmap_info);
+}
+
 #endif

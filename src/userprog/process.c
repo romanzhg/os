@@ -453,39 +453,14 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Get a page of memory. */
-/*
-      uint8_t *kpage = frame_get (PAL_USER);
-      if (kpage == NULL)
-        return false;
-*/
-
-      /* Load this page. */
-      //page_add_fs (struct hash * pages, void * vaddr, struct fs_addr addr)
       struct fs_addr addr;
       addr.file = file;
       addr.ofs = ofs;
       addr.length = page_read_bytes;
       addr.writable = writable;
-      page_add_fs (&thread_current ()->pages, upage, addr);
+      if (!page_add_fs (&thread_current ()->pages, upage, addr))
+        return false;
       ofs += page_read_bytes;
-/*
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          frame_free (kpage);
-          return false; 
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
-*/
-
-      /* Add the page to the process's address space. */
-/*
-      if (!install_page (upage, kpage, writable)) 
-        {
-          frame_free (kpage);
-          return false; 
-        }
-*/
 
       /* Advance. */
       read_bytes -= page_read_bytes;
