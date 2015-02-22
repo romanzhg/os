@@ -33,6 +33,9 @@ static unsigned tell (int fd);
 static void close (int fd);
 static pid_t exec (const char *cmd_line);
 
+static mapid_t mmap (int fd, void *addr);
+static void munmap (mapid_t mapping);
+
 static void get_arg (const uint8_t *uaddr, int * args);
 static bool is_valid_filename (const char* source);
 static bool is_valid_uaddr (const void* p, uint32_t range);
@@ -116,6 +119,12 @@ syscall_handler (struct intr_frame *f)
       case SYS_CLOSE:
         close (args[1]);
         break;
+      case SYS_MMAP:
+        f->eax = mmap (args[1], (void *) args[2]);
+        break;
+      case SYS_MUNMAP:
+        munmap (args[1]);
+        break;
       default:
         break;
     }
@@ -151,6 +160,29 @@ static int open (const char *file)
   if (f == NULL)
     return -1;
   return thread_open_file (f);
+}
+
+static mapid_t mmap (int fd, void *addr)
+{
+  if (fd == 0 || fd == 1)
+    return -1;
+
+  if (pg_ofs (addr) != 0 || addr == 0)
+    return -1;
+
+  lock_acquire (&fs_lock);
+  int file_len = file_length (file);
+  lock_release (&fs_lock);
+  
+  if (file_len  == 0)
+    return -1;
+  
+  return 0;
+}
+
+static void munmap (mapid_t mapping)
+{
+
 }
 
 static int filesize (int fd)

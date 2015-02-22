@@ -47,6 +47,6 @@ bool page_add_fs (struct hash * pages, void * vaddr, struct fs_addr addr);
 bool page_add_swap (struct hash * pages, void * vaddr, struct swap_addr addr);
 void page_destory (struct hash * pages);
 bool page_fault_handler (struct hash * pages, void * vaddr);
-bool page_stack_growth_handler (void * vaddr, void * esp, bool is_write);
+bool page_stack_growth_handler (void * vaddr, void * esp);
 
 #endif

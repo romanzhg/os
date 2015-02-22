@@ -41,6 +41,13 @@ struct file_des
   struct list_elem elem;
 };
 
+struct mmap_info
+{
+  int fd;
+  void *start;          /* The starting virtual address */
+  size_t length;
+};
+
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -124,6 +131,7 @@ struct thread
     struct file * file;
     struct hash pages;
     void * uesp;
+    struct list mmap_list;
 #endif
 
     /* Owned by thread.c. */

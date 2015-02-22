@@ -643,6 +643,7 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->children);
   t->exit_status = 0;
   list_init(&t->fd_list);
+  list_init(&t->mmap_list);
   t->next_fd = 2;
 #endif
 

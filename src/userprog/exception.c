@@ -159,25 +159,18 @@ page_fault (struct intr_frame *f)
       // page 
       if (((uint32_t) PHYS_BASE - (uint32_t) fault_addr) < (uint32_t) 0x800000)
         {
+          void * esp;
           if (user)
-            {
-              if (page_stack_growth_handler (fault_addr, f->esp, write))
-                return; 
-              else
-                {
-                  thread_set_exit_status(-1);
-                  thread_exit (); 
-                }
-            }
+            esp = f->esp;
+          else
+            esp = thread_current ()->uesp;
+
+          if (page_stack_growth_handler (fault_addr, esp))
+            return; 
           else
             {
-              if (page_stack_growth_handler (fault_addr, thread_current ()->uesp, write))
-                return; 
-              else
-                {
-                  thread_set_exit_status(-1);
-                  thread_exit (); 
-                }
+              thread_set_exit_status(-1);
+              thread_exit (); 
             }
         }
       else
@@ -202,4 +195,3 @@ page_fault (struct intr_frame *f)
           user ? "user" : "kernel");
   kill (f);
 }
-
