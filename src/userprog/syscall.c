@@ -71,6 +71,7 @@ is_valid_uaddr (const void* p, uint32_t range)
 static void
 syscall_handler (struct intr_frame *f) 
 {
+  thread_current ()->uesp = f->esp;
   int32_t args[4];
   get_arg((uint8_t *)f->esp, args);
 

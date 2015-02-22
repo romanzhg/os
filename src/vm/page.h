@@ -43,9 +43,10 @@ bool page_less (const struct hash_elem *a_, const struct hash_elem *b_,
                 void *aux UNUSED);
 void page_destructor (struct hash_elem *e, void *aux UNUSED);
 
-void page_destory (struct hash * pages);
-bool page_fault_handler (struct hash * pages, void * vaddr);
 bool page_add_fs (struct hash * pages, void * vaddr, struct fs_addr addr);
 bool page_add_swap (struct hash * pages, void * vaddr, struct swap_addr addr);
+void page_destory (struct hash * pages);
+bool page_fault_handler (struct hash * pages, void * vaddr);
+bool page_stack_growth_handler (void * vaddr, void * esp, bool is_write);
 
 #endif

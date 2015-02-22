@@ -4,6 +4,7 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
 #include "vm/page.h"
 
 /* Number of page faults processed. */
@@ -150,15 +151,46 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  // handle stack growth: if the faulted address is within one page below esp
-  // and the newly allocated page with 8MB below PHYBASE, then allocate a new
-  // page 
-
-  // bring the evicted page in
+  // handle page fault or stack growth
   if (not_present)
     {
-      if (page_fault_handler (&thread_current ()->pages, fault_addr))
-        return;
+      // handle stack growth: if the faulted address is within one page below esp
+      // and the newly allocated page with 8MB below PHYBASE, then allocate a new
+      // page 
+      if (((uint32_t) PHYS_BASE - (uint32_t) fault_addr) < (uint32_t) 0x800000)
+        {
+          if (user)
+            {
+              if (page_stack_growth_handler (fault_addr, f->esp, write))
+                return; 
+              else
+                {
+                  thread_set_exit_status(-1);
+                  thread_exit (); 
+                }
+            }
+          else
+            {
+              if (page_stack_growth_handler (fault_addr, thread_current ()->uesp, write))
+                return; 
+              else
+                {
+                  thread_set_exit_status(-1);
+                  thread_exit (); 
+                }
+            }
+        }
+      else
+        {
+          if (page_fault_handler (&thread_current ()->pages, fault_addr))
+            return;
+        }
+    }
+  else
+    {
+      // writing to a read only page
+      thread_set_exit_status(-1);
+      thread_exit ();
     }
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to

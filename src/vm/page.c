@@ -3,6 +3,7 @@
 #include "threads/malloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/palloc.h"
 #include "userprog/pagedir.h"
 #include "vm/frame.h"
 #include "filesys/off_t.h"
@@ -51,6 +52,23 @@ page_add_fs (struct hash * pages, void * vaddr, struct fs_addr addr)
   page->faddr = addr;
   ASSERT (hash_insert (pages, &page->hash_elem) == NULL);
   return true;
+}
+
+// valid vaddr: (vaddr >= esp) or (esp - vaddr <= 32)
+bool
+page_stack_growth_handler (void * vaddr, void * esp, bool is_write UNUSED)
+{
+  if ((uint32_t) vaddr >= (uint32_t) esp) {}
+  else if (((uint32_t) esp - (uint32_t) vaddr) > (uint32_t) 32)
+    return false;
+
+  // allocate a page and install it, the page should always be writable
+  // a stack page don't need to be zeroed
+  void * kpage = frame_get (0);
+  if (kpage == NULL)
+    return false;
+
+  return pagedir_set_page (thread_current ()->pagedir, pg_round_down(vaddr), kpage, true);
 }
 
 // put vaddr to a frame and page table, also remove the mapping from

@@ -123,6 +123,7 @@ struct thread
     int next_fd;
     struct file * file;
     struct hash pages;
+    void * uesp;
 #endif
 
     /* Owned by thread.c. */
