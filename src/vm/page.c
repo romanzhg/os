@@ -6,11 +6,11 @@
 #include "threads/palloc.h"
 #include "userprog/pagedir.h"
 #include "vm/frame.h"
+#include "vm/swap.h"
 #include "filesys/off_t.h"
 #include <string.h>
 #include <stdio.h>
 
-static void page_read_from_block (struct page * page, void * kpage);
 static void page_read_from_fs (struct page * page, void * kpage);
 static void print_pages (struct hash * pages);
 
@@ -46,17 +46,19 @@ page_remove (struct hash * pages, void *vaddr)
 // called when add a new mapping/frame table need to evict a page
 // need to revisit for concurrency concerns
 bool
-page_add_swap (struct hash * pages UNUSED, void * vaddr UNUSED,
-               struct swap_addr addr UNUSED)
+page_add_swap (struct hash * pages, void * vaddr,
+               int index)
 {
-/*
   struct page * page = malloc (sizeof (struct page));
+  if (page == NULL)
+    return false;
   page->vaddr = vaddr;
   page->in_fs = false;
-  page->saddr = addr;
-  hash_insert (pages, &page->hash_elem);
-*/
-  return false;
+  page->swap_index = index;
+  if (hash_insert (pages, &page->hash_elem) == NULL)
+    return true;
+  else
+    ASSERT (false);
 }
 
 bool
@@ -118,7 +120,10 @@ page_fault_handler (struct hash * pages, void * vaddr)
   if (page->in_fs)
     page_read_from_fs (page, kpage);
   else
-    page_read_from_block (page, kpage);
+    {
+      swap_read (page->swap_index, kpage);
+      swap_free (page->swap_index);
+    }
 
   bool rtn;
   // install the page
@@ -128,20 +133,15 @@ page_fault_handler (struct hash * pages, void * vaddr)
   if (page->in_fs)
     rtn = pagedir_set_page (thread_current ()->pagedir, pg_round_down(vaddr), kpage, page->faddr.writable);
   else
-    rtn = pagedir_set_page (thread_current ()->pagedir, pg_round_down(vaddr), kpage, page->saddr.writable);
+    {
+    // TODO: should we assume swap space always writable?
+      rtn = pagedir_set_page (thread_current ()->pagedir,
+                              pg_round_down(vaddr), kpage, true);
+    }
 
   //printf ("here 4\n");
   free (page);
   return rtn;
-}
-
-static void
-page_read_from_block (struct page * page, void * kpage)
-{
-  // move data in
-  int i;
-  for (i = 0; i < PGSIZE / BLOCK_SECTOR_SIZE; i ++)
-    block_read (page->saddr.block, page->saddr.sector + i, kpage + i * BLOCK_SECTOR_SIZE);
 }
 
 // TODO: see if need to handle return value?
