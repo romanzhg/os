@@ -197,23 +197,23 @@ mmap (int fd, void *addr)
   //printf ("here 1\n");
   // make sure the mapping doesn't overlap with any current page
 
-/*
   uint32_t tmp_file_len = file_len;
   uint32_t tmp_ofs = 0;
 
   lock_acquire (&frame_lock);
   while (tmp_file_len > 0)
     {
+      size_t tmp_length = tmp_file_len < PGSIZE ? tmp_file_len : PGSIZE;
+      //printf ("uaddr to look at: %p\n", addr+tmp_ofs);
       if (page_lookup (&thread_current ()->pages, addr + tmp_ofs) != NULL)
         return -1;
       if (pagedir_get_page (thread_current ()->pagedir, addr + tmp_ofs) != NULL)
         return -1;
       tmp_ofs += PGSIZE;
+      tmp_file_len -= tmp_length;
     }
   lock_release (&frame_lock);
 
-  printf ("here 2\n");
-*/
   off_t ofs = 0;
   while (file_len > 0)
     {
