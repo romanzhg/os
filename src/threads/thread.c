@@ -426,7 +426,8 @@ thread_exit (void)
   ASSERT (!intr_context ());
 
 #ifdef USERPROG
-  //thread_munmap_all ();
+  thread_munmap_all ();
+  page_destory (&thread_current () -> pages);
   enum intr_level old_level = intr_disable ();
   struct thread *current = thread_current ();
   printf ("%s: exit(%d)\n", current->name, current->exit_status);
@@ -936,23 +937,31 @@ thread_munmap (mapid_t mapping)
       struct mmap_info * tmp = list_entry (e, struct mmap_info, elem);
       if (tmp->mapid == mapping){
         mmap_info = tmp;
+        list_remove(e);
         break;
       }
     }
 
   if (mmap_info == NULL)
     return;
+  lock_acquire (&frame_lock);
   release_mmap (mmap_info);
+  lock_release (&frame_lock);
 }
 
 static void
 thread_munmap_all (void)
 {
   struct list_elem *e;
-  for (e = list_begin (&thread_current () -> mmap_list); e != list_end (&thread_current () -> mmap_list); e = list_next (e))
+  for (e = list_begin (&thread_current () -> mmap_list); e != list_end (&thread_current () -> mmap_list);)
     {
       struct mmap_info * tmp = list_entry (e, struct mmap_info, elem);
+
+      e = list_remove(e);
+
+      lock_acquire (&frame_lock);
       release_mmap (tmp);
+      lock_release (&frame_lock);
     }
 }
 
@@ -963,7 +972,6 @@ release_mmap (struct mmap_info * mmap_info)
   // back to fs if needed
   int file_len = mmap_info->length;
   uint32_t ofs = 0;
-  lock_acquire (&frame_lock);
   while (file_len > 0)
     {
       void * addr = mmap_info->start + ofs;
@@ -977,7 +985,6 @@ release_mmap (struct mmap_info * mmap_info)
       }
       file_len -= write_bytes;
     }
-  lock_release (&frame_lock);
 
   // TODO: need to obtain the filesys lock
   file_close (mmap_info->file);

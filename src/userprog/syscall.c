@@ -206,9 +206,15 @@ mmap (int fd, void *addr)
       size_t tmp_length = tmp_file_len < PGSIZE ? tmp_file_len : PGSIZE;
       //printf ("uaddr to look at: %p\n", addr+tmp_ofs);
       if (page_lookup (&thread_current ()->pages, addr + tmp_ofs) != NULL)
-        return -1;
+        {
+          lock_release (&frame_lock);
+          return -1;
+        }
       if (pagedir_get_page (thread_current ()->pagedir, addr + tmp_ofs) != NULL)
-        return -1;
+        {
+          lock_release (&frame_lock);
+          return -1;
+        }
       tmp_ofs += PGSIZE;
       tmp_file_len -= tmp_length;
     }
