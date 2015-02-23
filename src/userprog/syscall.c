@@ -1,18 +1,21 @@
 #include "userprog/syscall.h"
+
 #include <stdio.h>
 #include <syscall-nr.h>
-#include "threads/interrupt.h"
-#include "threads/thread.h"
-#include "threads/malloc.h"
-#include "lib/kernel/console.h"
+
 #include "devices/shutdown.h"
 #include "devices/input.h"
+#include "filesys/file.h"
+#include "filesys/filesys.h"
+#include "lib/kernel/console.h"
+#include "threads/interrupt.h"
+#include "threads/malloc.h"
+#include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
-#include "filesys/file.h"
-#include "filesys/filesys.h"
 #include "vm/page.h"
+#include "vm/frame.h"
 
 /*
   Note: Pints kernel has mapped the user page to it's own page table, so it's
@@ -174,17 +177,43 @@ mmap (int fd, void *addr)
 
   struct file * file = file_reopen (thread_lookup_fd (fd));
   lock_acquire (&fs_lock);
-  int file_len = file_length (file);
+  uint32_t file_len = file_length (file);
   lock_release (&fs_lock);
   
   if (file_len  == 0)
     return -1;
-  
+
   struct mmap_info mmap_info;
-  mmap_info.fd = fd;
+  mmap_info.file = file;
   mmap_info.start = addr;
   mmap_info.length = file_len;
 
+  //printf ("here 0\n");
+  //printf ("highest address: %p\n", pg_round_down(addr + file_len));
+  //printf ("highest address plus: %p\n", pg_round_down(addr + file_len) + (uint32_t ) 0x800000);
+  if (pg_round_down(addr + file_len) + (uint32_t ) 0x800000 >= PHYS_BASE)
+    return -1;
+
+  //printf ("here 1\n");
+  // make sure the mapping doesn't overlap with any current page
+
+/*
+  uint32_t tmp_file_len = file_len;
+  uint32_t tmp_ofs = 0;
+
+  lock_acquire (&frame_lock);
+  while (tmp_file_len > 0)
+    {
+      if (page_lookup (&thread_current ()->pages, addr + tmp_ofs) != NULL)
+        return -1;
+      if (pagedir_get_page (thread_current ()->pagedir, addr + tmp_ofs) != NULL)
+        return -1;
+      tmp_ofs += PGSIZE;
+    }
+  lock_release (&frame_lock);
+
+  printf ("here 2\n");
+*/
   off_t ofs = 0;
   while (file_len > 0)
     {
@@ -198,6 +227,7 @@ mmap (int fd, void *addr)
       fs_addr.writable = true;
 
       // TODO: need to release the resources already allocated in this while loop
+      // TODO: should allocate the page at once, then fill them in. need refactor
       if (!page_add_fs (&thread_current ()->pages, addr, fs_addr))
         return -1;
 

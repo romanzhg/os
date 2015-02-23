@@ -45,7 +45,7 @@ struct file_des
 struct mmap_info
 {
   mapid_t mapid;
-  int fd;
+  struct file * file;
   void *start;          /* The starting virtual address */
   size_t length;
   struct list_elem elem;

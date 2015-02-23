@@ -7,6 +7,9 @@
 #include "threads/palloc.h"
 #include "vm/frame.h"
 
+// for debug, to be removed
+#include <stdio.h>
+
 static uint32_t *active_pd (void);
 static void invalidate_pagedir (uint32_t *);
 
@@ -266,13 +269,19 @@ invalidate_pagedir (uint32_t *pd)
 
 // Remove the page from memory
 bool
-pagedir_remove (uint32_t *pd, void *vaddr)
+pagedir_remove (uint32_t *pd, struct mmap_info *mmap_info, uint32_t ofs, uint32_t bytes)
 {
-  void * kpage = pagedir_get_page (pd, vaddr);
+  void * kpage = pagedir_get_page (pd, mmap_info->start + ofs);
   if (kpage == NULL)
     return false;
 
-  pagedir_clear_page (pd, vaddr);
+  // if the page is modified and backed by the fs, write it to fs
+  if (pagedir_is_dirty (pd, mmap_info->start + ofs))
+    {
+      ASSERT ((uint32_t)file_write_at (mmap_info->file, kpage, bytes, ofs) == bytes);
+    }
+
+  pagedir_clear_page (pd, mmap_info->start + ofs);
   frame_free(kpage);
   return true;
 }

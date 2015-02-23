@@ -10,7 +10,6 @@
 #include <string.h>
 #include <stdio.h>
 
-static struct page * page_lookup (struct hash * pages, void *vaddr);
 static void page_read_from_block (struct page * page, void * kpage);
 static void page_read_from_fs (struct page * page, void * kpage);
 static void print_pages (struct hash * pages);
@@ -157,7 +156,7 @@ page_read_from_fs (struct page * page, void * kpage)
 // TODO: need to deny write access to a read only page and any access to kernel
 // memory
 // lookup and remove the element from pages
-static struct page *
+struct page *
 page_lookup (struct hash * pages, void *vaddr)
 {
   struct page p;

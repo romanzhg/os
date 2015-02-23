@@ -49,6 +49,7 @@ void *frame_get (int flags)
   return rtn;
 }
 
+// should call with the frame lock hold
 // put the frame back to frame list
 // TODO: need to revisit page deletion
 void frame_free (void * p)

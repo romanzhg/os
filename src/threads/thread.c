@@ -79,6 +79,8 @@ static tid_t allocate_tid (void);
 static pid_t allocate_pid (void);
 static int thread_get_next_fd (void);
 static int thread_get_next_mmap_id (void);
+static void thread_munmap_all (void);
+static void release_mmap (struct mmap_info * mmap_info);
 #endif
 
 /* Initializes the threading system by transforming the code
@@ -424,6 +426,7 @@ thread_exit (void)
   ASSERT (!intr_context ());
 
 #ifdef USERPROG
+  //thread_munmap_all ();
   enum intr_level old_level = intr_disable ();
   struct thread *current = thread_current ();
   printf ("%s: exit(%d)\n", current->name, current->exit_status);
@@ -440,6 +443,7 @@ thread_exit (void)
   sema_down(&current->to_exit);
 
   // release resources
+  // TODO: is disabling interruption here necessary?
   old_level = intr_disable ();
   struct list_elem *e;
   for (e = list_begin (&current->children); e != list_end (&current->children);)
@@ -457,6 +461,7 @@ thread_exit (void)
       e = list_remove(e);
       free(file_des);
     }
+
 
   intr_set_level (old_level);
 #endif
@@ -924,6 +929,7 @@ thread_munmap (mapid_t mapping)
 {
   struct mmap_info * mmap_info = NULL;
 
+  // locate mmap_info
   struct list_elem *e;
   for (e = list_begin (&thread_current () -> mmap_list); e != list_end (&thread_current () -> mmap_list); e = list_next (e))
     {
@@ -936,23 +942,45 @@ thread_munmap (mapid_t mapping)
 
   if (mmap_info == NULL)
     return;
+  release_mmap (mmap_info);
+}
 
+static void
+thread_munmap_all (void)
+{
+  struct list_elem *e;
+  for (e = list_begin (&thread_current () -> mmap_list); e != list_end (&thread_current () -> mmap_list); e = list_next (e))
+    {
+      struct mmap_info * tmp = list_entry (e, struct mmap_info, elem);
+      release_mmap (tmp);
+    }
+}
+
+static void
+release_mmap (struct mmap_info * mmap_info)
+{
+  // remove all the pages from supplemental page table or real memory, write it
+  // back to fs if needed
   int file_len = mmap_info->length;
   uint32_t ofs = 0;
   lock_acquire (&frame_lock);
   while (file_len > 0)
     {
       void * addr = mmap_info->start + ofs;
+      uint32_t write_bytes = file_len < PGSIZE ? file_len : PGSIZE;
       if (page_remove (&thread_current ()->pages, addr))
         return;
-      else if (pagedir_remove (thread_current ()->pagedir, addr))
+      else if (pagedir_remove (thread_current ()->pagedir, mmap_info, ofs, write_bytes))
         return;
       else{
-        printf("should not be here\n");
         ASSERT(false);
       }
+      file_len -= write_bytes;
     }
   lock_release (&frame_lock);
+
+  // TODO: need to obtain the filesys lock
+  file_close (mmap_info->file);
   free (mmap_info);
 }
 

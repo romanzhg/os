@@ -177,6 +177,11 @@ page_fault (struct intr_frame *f)
         {
           if (page_fault_handler (&thread_current ()->pages, fault_addr))
             return;
+          else
+            {
+              thread_set_exit_status(-1);
+              thread_exit ();
+            }
         }
     }
   else
