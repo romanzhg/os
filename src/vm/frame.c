@@ -11,6 +11,7 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "userprog/pagedir.h"
 #include "vm/page.h"
 #include "vm/swap.h"
 
@@ -44,7 +45,7 @@ struct lock frame_lock;
 void frame_init (void)
 {
   lock_init (&frame_lock);
-  //random_init (123);
+  random_init (234);
   frames = (struct frame *) malloc (init_ram_pages * sizeof (struct frame));
 
   uint32_t i;
@@ -60,7 +61,6 @@ void *frame_get (int flags)
   void * rtn = palloc_get_page (flags | PAL_USER);
   // chose a page to evict
   if (rtn == NULL) {
-    // go through frame array, randomly evict one page
     rtn = frame_evict();
   }
   lock_release (&frame_lock);
@@ -70,23 +70,26 @@ void *frame_get (int flags)
 static void *
 frame_evict (void)
 {
-  int rand_index = init_ram_pages;
+  int rand_index = 0;
   while (true)
   {
-    rand_index--;
+    rand_index = random_ulong () % init_ram_pages;
     if (frames[rand_index].present == true)
       {
         break;
       }
   }
+  //printf ("evicting index: %d\n", rand_index);
   frames[rand_index].present = false;
+  pagedir_clear_page (frames[rand_index].thread->pagedir, frames[rand_index].uaddr);
   
   // for now only consider evict to swap
   int swap_index = swap_get ();
   if (swap_index == -1)
     return NULL;
 
-  page_add_swap (&thread_current ()->pages, frames[rand_index].uaddr, swap_index);
+  if (!page_add_swap (&(frames[rand_index].thread->pages), frames[rand_index].uaddr, swap_index))
+    return NULL;
   swap_write (swap_index, ptov(rand_index << FRAME_SHIFT));
   
   return ptov(rand_index << FRAME_SHIFT);
@@ -105,13 +108,11 @@ void frame_free (void * kpage)
 // when user tries to add an entry to the page table, update the frame table also
 void frame_set_mapping (void *upage, void *kpage, bool writable UNUSED)
 {
-  struct frame tmp;
-  tmp.thread = thread_current ();
-  tmp.uaddr = upage;
-  tmp.present = true;
-
   uint32_t index = vtop (kpage) >> FRAME_SHIFT;
   ASSERT (index < init_ram_pages);
+  //printf ("install index: %d\n", index);
 
-  frames[index] = tmp;
+  frames[index].thread = thread_current ();
+  frames[index].uaddr = upage;
+  frames[index].present = true;
 }

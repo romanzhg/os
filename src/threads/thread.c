@@ -426,8 +426,10 @@ thread_exit (void)
   ASSERT (!intr_context ());
 
 #ifdef USERPROG
-  thread_munmap_all ();
+  lock_acquire (&frame_lock);
   page_destory (&thread_current () -> pages);
+  thread_munmap_all ();
+  lock_release (&frame_lock);
   enum intr_level old_level = intr_disable ();
   struct thread *current = thread_current ();
   printf ("%s: exit(%d)\n", current->name, current->exit_status);
@@ -959,9 +961,7 @@ thread_munmap_all (void)
 
       e = list_remove(e);
 
-      lock_acquire (&frame_lock);
       release_mmap (tmp);
-      lock_release (&frame_lock);
     }
 }
 
@@ -974,20 +974,16 @@ release_mmap (struct mmap_info * mmap_info)
   uint32_t ofs = 0;
   while (file_len > 0)
     {
-      void * addr = mmap_info->start + ofs;
       uint32_t write_bytes = file_len < PGSIZE ? file_len : PGSIZE;
-      if (page_remove (&thread_current ()->pages, addr))
-        return;
-      else if (pagedir_remove (thread_current ()->pagedir, mmap_info, ofs, write_bytes))
-        return;
-      else{
-        ASSERT(false);
-      }
+      pagedir_remove (thread_current ()->pagedir, mmap_info, ofs, write_bytes);
+
       file_len -= write_bytes;
+      ofs += write_bytes;
     }
 
-  // TODO: need to obtain the filesys lock
+  lock_acquire (&fs_lock);
   file_close (mmap_info->file);
+  lock_release (&fs_lock);
   free (mmap_info);
 }
 

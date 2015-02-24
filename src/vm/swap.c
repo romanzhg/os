@@ -1,11 +1,11 @@
 #include "vm/swap.h"
 
-#include "threads/synch.h"
-#include "threads/malloc.h"
 #include "devices/block.h"
+#include "threads/malloc.h"
+#include "threads/synch.h"
+#include "threads/vaddr.h"
 
-// for debug only
-#include <stdio.h>
+#define BLOCKS_PER_PAGE (PGSIZE / BLOCK_SECTOR_SIZE)
 
 struct swap
 {
@@ -23,7 +23,7 @@ swap_init (void)
 {
   lock_init (&swap_lock);
   swap_space = block_get_role (BLOCK_SWAP);
-  swap_size = ((uint32_t) block_size (swap_space)) / 8;
+  swap_size = ((uint32_t) block_size (swap_space)) / BLOCKS_PER_PAGE;
   swap_table = malloc (swap_size * sizeof (struct swap));
   if (swap_table == NULL)
     {
@@ -63,9 +63,8 @@ void swap_free (int index)
 void
 swap_write (int index, void * source)
 {
-  int base_sector = index * 8;
-  int i;
-  for (i = 0; i < 8; i++)
+  int base_sector = index * BLOCKS_PER_PAGE, i;
+  for (i = 0; i < BLOCKS_PER_PAGE; i++)
     block_write (swap_space, base_sector + i, source + i * BLOCK_SECTOR_SIZE);
 }
 
@@ -74,8 +73,7 @@ swap_write (int index, void * source)
 void
 swap_read (int index, void * dest)
 {
-  int base_sector = index * 8;
-  int i;
-  for (i = 0; i < 8; i++)
+  int base_sector = index * BLOCKS_PER_PAGE, i;
+  for (i = 0; i < BLOCKS_PER_PAGE; i++)
     block_read (swap_space, base_sector + i, dest + i * BLOCK_SECTOR_SIZE);
 }
