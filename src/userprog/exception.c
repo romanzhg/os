@@ -165,7 +165,7 @@ page_fault (struct intr_frame *f)
           else
             esp = thread_current ()->uesp;
 
-          if (page_stack_growth_handler (fault_addr, esp))
+          if (page_stack_growth_handler (&thread_current ()->pages, fault_addr, esp))
             return; 
           else
             {

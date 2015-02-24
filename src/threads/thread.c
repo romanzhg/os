@@ -426,10 +426,8 @@ thread_exit (void)
   ASSERT (!intr_context ());
 
 #ifdef USERPROG
-  lock_acquire (&frame_lock);
-  page_destory (&thread_current () -> pages);
   thread_munmap_all ();
-  lock_release (&frame_lock);
+  page_destory (&thread_current () -> pages);
   enum intr_level old_level = intr_disable ();
   struct thread *current = thread_current ();
   printf ("%s: exit(%d)\n", current->name, current->exit_status);
@@ -946,6 +944,7 @@ thread_munmap (mapid_t mapping)
 
   if (mmap_info == NULL)
     return;
+
   lock_acquire (&frame_lock);
   release_mmap (mmap_info);
   lock_release (&frame_lock);
@@ -954,17 +953,18 @@ thread_munmap (mapid_t mapping)
 static void
 thread_munmap_all (void)
 {
+  lock_acquire (&frame_lock);
   struct list_elem *e;
   for (e = list_begin (&thread_current () -> mmap_list); e != list_end (&thread_current () -> mmap_list);)
     {
       struct mmap_info * tmp = list_entry (e, struct mmap_info, elem);
-
       e = list_remove(e);
-
       release_mmap (tmp);
     }
+  lock_release (&frame_lock);
 }
 
+// Need to call this function with the frame_lock, otherwise the pagedir content for this process may chagne
 static void
 release_mmap (struct mmap_info * mmap_info)
 {
@@ -974,11 +974,15 @@ release_mmap (struct mmap_info * mmap_info)
   uint32_t ofs = 0;
   while (file_len > 0)
     {
-      uint32_t write_bytes = file_len < PGSIZE ? file_len : PGSIZE;
-      pagedir_remove (thread_current ()->pagedir, mmap_info, ofs, write_bytes);
+      void * uaddr = mmap_info->start + ofs;
+      uint32_t page_len = file_len < PGSIZE ? file_len : PGSIZE;
+      if (page_remove_mmap (&thread_current ()->pages, uaddr)) {}
+      else if (pagedir_remove (thread_current ()->pagedir, mmap_info, ofs, page_len)) {}
+      else
+        PANIC ("the page should be in either memory or file system\n");
 
-      file_len -= write_bytes;
-      ofs += write_bytes;
+      file_len -= page_len;
+      ofs += page_len;
     }
 
   lock_acquire (&fs_lock);
@@ -986,5 +990,4 @@ release_mmap (struct mmap_info * mmap_info)
   lock_release (&fs_lock);
   free (mmap_info);
 }
-
 #endif

@@ -110,7 +110,6 @@ void frame_set_mapping (void *upage, void *kpage, bool writable UNUSED)
 {
   uint32_t index = vtop (kpage) >> FRAME_SHIFT;
   ASSERT (index < init_ram_pages);
-  //printf ("install index: %d\n", index);
 
   frames[index].thread = thread_current ();
   frames[index].uaddr = upage;
