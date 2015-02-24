@@ -187,15 +187,10 @@ mmap (int fd, void *addr)
   mmap_info.start = addr;
   mmap_info.length = file_len;
 
-  //printf ("here 0\n");
-  //printf ("highest address: %p\n", pg_round_down(addr + file_len));
-  //printf ("highest address plus: %p\n", pg_round_down(addr + file_len) + (uint32_t ) 0x800000);
   if (pg_round_down(addr + file_len) + (uint32_t ) 0x800000 >= PHYS_BASE)
     return -1;
 
-  //printf ("here 1\n");
   // make sure the mapping doesn't overlap with any current page
-
   uint32_t tmp_file_len = file_len;
   uint32_t tmp_ofs = 0;
 
@@ -204,7 +199,7 @@ mmap (int fd, void *addr)
     {
       size_t tmp_length = tmp_file_len < PGSIZE ? tmp_file_len : PGSIZE;
       //printf ("uaddr to look at: %p\n", addr+tmp_ofs);
-      if (page_lookup (&thread_current ()->pages, addr + tmp_ofs) != NULL)
+      if (page_lookup (&thread_current ()->pages, addr + tmp_ofs, false) != NULL)
         {
           lock_release (&frame_lock);
           return -1;
@@ -214,6 +209,7 @@ mmap (int fd, void *addr)
           lock_release (&frame_lock);
           return -1;
         }
+
       tmp_ofs += PGSIZE;
       tmp_file_len -= tmp_length;
     }

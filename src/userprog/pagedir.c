@@ -277,9 +277,7 @@ pagedir_remove (uint32_t *pd, struct mmap_info *mmap_info, uint32_t ofs, uint32_
 
   // if the page is modified and backed by the fs, write it to fs
   if (pagedir_is_dirty (pd, mmap_info->start + ofs))
-    {
-      ASSERT ((uint32_t)file_write_at (mmap_info->file, kpage, bytes, ofs) == bytes);
-    }
+    ASSERT ((uint32_t)file_write_at (mmap_info->file, kpage, bytes, ofs) == bytes);
 
   pagedir_clear_page (pd, mmap_info->start + ofs);
   frame_free(kpage);

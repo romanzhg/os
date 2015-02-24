@@ -79,7 +79,7 @@ frame_evict (void)
         break;
       }
   }
-  //printf ("evicting index: %d\n", rand_index);
+
   frames[rand_index].present = false;
   pagedir_clear_page (frames[rand_index].thread->pagedir, frames[rand_index].uaddr);
   

@@ -86,7 +86,7 @@ page_stack_growth_handler (struct hash * pages, void * vaddr, void * esp)
 
       // the page maybe in swap
       struct page * page;
-      if ((page = page_lookup (pages,  pg_round_down(vaddr))) != NULL)
+      if ((page = page_lookup (pages, pg_round_down(vaddr), true)) != NULL)
         {
           ASSERT (!page->in_fs);
           swap_read (page->swap_index, kpage);
@@ -121,7 +121,7 @@ page_fault_handler (struct hash * pages, void * vaddr)
   //printf("vaddr: %p\n", vaddr);
   //printf("vaddr pg_no: %p\n",  pg_round_down(vaddr));
   //print_pages (pages);
-  if ((page = page_lookup (pages,  pg_round_down(vaddr))) == NULL)
+  if ((page = page_lookup (pages, pg_round_down(vaddr), true)) == NULL)
     return false;
   
   // get an empty frame from the frame table
@@ -166,13 +166,16 @@ page_read_from_fs (struct page * page, void * kpage)
 // memory
 // lookup and remove the element from pages
 struct page *
-page_lookup (struct hash * pages, void *vaddr)
+page_lookup (struct hash * pages, void *vaddr, bool to_delete)
 {
   struct page p;
   struct hash_elem *e;
 
   p.vaddr = vaddr;
-  e = hash_delete (pages, &p.hash_elem);
+  if (to_delete)
+    e = hash_delete (pages, &p.hash_elem);
+  else
+    e = hash_find (pages, &p.hash_elem);
   return e != NULL ? hash_entry (e, struct page, hash_elem) : NULL;
 }
 
