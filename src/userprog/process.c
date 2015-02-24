@@ -54,7 +54,7 @@ process_execute (const char *file_name)
     }
 
   thread_wait_ready (tid);
-  if (thread_check_exit_status (tid) == -1)
+  if (thread_check_exit_status (tid) == -2)
     return TID_ERROR;
 
   struct child_thread * child = malloc (sizeof (struct child_thread));
@@ -92,7 +92,7 @@ start_process (void *file_name_)
   /* If load failed, quit. */
   if (!success)
     {
-      thread_set_exit_status (-1);
+      thread_set_exit_status (-2);
       thread_exit ();
     }
 

@@ -21,6 +21,7 @@ struct frame
 {
   //bool pageable;
 
+
   // if needs to traversal the list may need to add a bool here
   // to track if the frame can be put in page table
 

@@ -430,7 +430,8 @@ thread_exit (void)
   page_destory (&thread_current () -> pages);
   enum intr_level old_level = intr_disable ();
   struct thread *current = thread_current ();
-  printf ("%s: exit(%d)\n", current->name, current->exit_status);
+  if (current->exit_status != -2)
+    printf ("%s: exit(%d)\n", current->name, current->exit_status);
 
   process_exit ();
   file_close(current->file);

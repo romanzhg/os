@@ -27,7 +27,7 @@ swap_init (void)
   swap_table = malloc (swap_size * sizeof (struct swap));
   if (swap_table == NULL)
     {
-      ASSERT(false);
+    ASSERT(false);
     }
 
   int i;
