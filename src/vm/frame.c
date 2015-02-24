@@ -19,12 +19,10 @@
 
 struct frame
 {
-  //bool pageable;
-
+  // TODO: need to implement memory pinning
 
   // if needs to traversal the list may need to add a bool here
   // to track if the frame can be put in page table
-
   bool present;
   // user virtual address correspond to this frame
   // at the time of eviction, check on uaddr, if it belongs to a mmapped file
@@ -34,10 +32,10 @@ struct frame
   void* uaddr;
 
   struct thread * thread;
-
 };
 
 static void * frame_evict (void);
+static int clock_value = 0;
 
 struct frame* frames;
 // should obtain the lock when evicting pages/doing real io(?)
@@ -71,29 +69,35 @@ void *frame_get (int flags)
 static void *
 frame_evict (void)
 {
-  int rand_index = 0;
   while (true)
   {
-    rand_index = random_ulong () % init_ram_pages;
-    if (frames[rand_index].present == true)
+    clock_value = (clock_value + 1) % init_ram_pages; 
+    if (frames[clock_value].present == true)
       {
-        break;
+        if (pagedir_is_accessed (frames[clock_value].thread->pagedir, frames[clock_value].uaddr))
+          {
+            pagedir_set_accessed (frames[clock_value].thread->pagedir, frames[clock_value].uaddr, false);
+            continue;
+          }
+        else
+          break;
       }
   }
 
-  frames[rand_index].present = false;
-  pagedir_clear_page (frames[rand_index].thread->pagedir, frames[rand_index].uaddr);
+  int index = clock_value;
+  frames[index].present = false;
+  pagedir_clear_page (frames[index].thread->pagedir, frames[index].uaddr);
   
   // for now only consider evict to swap
   int swap_index = swap_get ();
   if (swap_index == -1)
     return NULL;
 
-  if (!page_add_swap (&(frames[rand_index].thread->pages), frames[rand_index].uaddr, swap_index))
+  if (!page_add_swap (&(frames[index].thread->pages), frames[index].uaddr, swap_index))
     return NULL;
-  swap_write (swap_index, ptov(rand_index << FRAME_SHIFT));
+  swap_write (swap_index, ptov(index << FRAME_SHIFT));
   
-  return ptov(rand_index << FRAME_SHIFT);
+  return ptov(index << FRAME_SHIFT);
 }
 
 // should call with the frame lock hold
