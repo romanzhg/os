@@ -3,7 +3,6 @@
 #include <debug.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <random.h>
 
 #include "threads/loader.h"
 #include "threads/malloc.h"
@@ -44,7 +43,6 @@ struct lock frame_lock;
 void frame_init (void)
 {
   lock_init (&frame_lock);
-  random_init (234);
   frames = (struct frame *) malloc (init_ram_pages * sizeof (struct frame));
 
   uint32_t i;

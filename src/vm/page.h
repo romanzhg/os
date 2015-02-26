@@ -9,22 +9,18 @@
 
 struct fs_addr
 {
-  struct file * file;
-  off_t ofs;
-  // only length bytes needs to be read, other should be zeroed
-  size_t length;
-  bool writable;
+  struct file * file;     /* the mmapped file */
+  off_t ofs;              /* the offset for this page in the mmapped file */
+  size_t length;          /* valid bytes for the page */
+  bool writable;          /* is this file writable */
 };
 
 struct page 
 { 
-  struct hash_elem hash_elem; 
-  // page alligned virtual address
-  void *vaddr;
-  // true if the page is in file systems instead of swap
-  bool in_fs;
-  int swap_index;
-  struct fs_addr faddr;
+  void *vaddr;            /* the virtual address for this page */
+  int swap_index;         /* swap slot for the page, -1 if in file system */
+  struct fs_addr faddr;   /* location for the page in file system */
+  struct hash_elem hash_elem;          /* element for the page table*/
 }; 
 
 bool page_add_fs (struct hash * pages, void * vaddr, struct fs_addr addr);

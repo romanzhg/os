@@ -34,7 +34,6 @@ page_remove_mmap (struct hash * pages, void *vaddr)
     return false;
   else
     {
-      ASSERT (hash_entry (e, struct page, hash_elem)->in_fs);
       free (hash_entry (e, struct page, hash_elem));
       return true;
     }
@@ -53,7 +52,6 @@ page_add_swap (struct hash * pages, void * vaddr,
     return false;
 
   page->vaddr = vaddr;
-  page->in_fs = false;
   page->swap_index = index;
   ASSERT (hash_insert (pages, &page->hash_elem) == NULL);
   return true;
@@ -66,7 +64,7 @@ page_add_fs (struct hash * pages, void * vaddr, struct fs_addr addr)
   if (page == NULL)
     return false;
   page->vaddr = vaddr;
-  page->in_fs = true;
+  page->swap_index = -1;
   page->faddr = addr;
   ASSERT (hash_insert (pages, &page->hash_elem) == NULL);
   return true;
@@ -88,7 +86,7 @@ page_stack_growth_handler (struct hash * pages, void * vaddr, void * esp)
       struct page * page;
       if ((page = page_lookup (pages, pg_round_down(vaddr), true)) != NULL)
         {
-          ASSERT (!page->in_fs);
+          ASSERT (page->swap_index != -1);
           swap_read (page->swap_index, kpage);
           swap_free (page->swap_index);
         }
@@ -132,7 +130,7 @@ page_fault_handler (struct hash * pages, void * vaddr)
     return false;
 
   // read data from the block
-  if (page->in_fs)
+  if (page->swap_index == -1)
     page_read_from_fs (page, kpage);
   else
     {
@@ -142,7 +140,7 @@ page_fault_handler (struct hash * pages, void * vaddr)
 
   bool rtn;
   // install the page
-  if (page->in_fs)
+  if (page->swap_index == -1)
     rtn = pagedir_set_page (thread_current ()->pagedir,
                             pg_round_down(vaddr), kpage, page->faddr.writable);
   else
@@ -202,7 +200,7 @@ void
 page_destructor (struct hash_elem *e, void *aux UNUSED)
 {
   struct page * page = hash_entry (e, struct page, hash_elem);
-  if (!page->in_fs)
+  if (page->swap_index != -1)
     swap_free (page->swap_index);
   free(page);
 }
