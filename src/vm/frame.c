@@ -50,47 +50,57 @@ static void *
 frame_evict (void)
 {
   lock_acquire (&frame_lock);
+  // TODO: if all memory is pinned this would be a infinite loop
   while (true)
-  {
-    clock_hand = (clock_hand + 1) % init_ram_pages; 
-    if (frames[clock_hand].present == true
-        && frames[clock_hand].pinned == false)
-      {
-        if (pagedir_is_accessed (frames[clock_hand].thread->pagedir, frames[clock_hand].uaddr))
-          {
-            pagedir_set_accessed (frames[clock_hand].thread->pagedir, frames[clock_hand].uaddr, false);
-            continue;
-          }
-        else
-          break;
-      }
-  }
+    {
+      clock_hand = (clock_hand + 1) % init_ram_pages; 
+      if (frames[clock_hand].present == true
+          && frames[clock_hand].pinned == false)
+        {
+          if (pagedir_is_accessed (
+              frames[clock_hand].thread->pagedir, frames[clock_hand].uaddr))
+            {
+              pagedir_set_accessed (frames[clock_hand].thread->pagedir,
+                                    frames[clock_hand].uaddr, false);
+              continue;
+            }
+          else
+            break;
+        }
+    }
 
   int index = clock_hand;
-  frames[index].present = false;
-  pagedir_clear_page (frames[index].thread->pagedir, frames[index].uaddr);
+  struct frame * to_evict = &frames[index];
+  to_evict->present = false;
+  pagedir_clear_page (to_evict->thread->pagedir, to_evict->uaddr);
   
-  struct mmap_info * map_info = get_mmap_info (frames[index].thread, frames[index].uaddr);
+  struct mmap_info * map_info = get_mmap_info (to_evict->thread,
+                                               to_evict->uaddr);
   if (map_info != NULL)
     {
       struct fs_addr faddr;
       faddr.file = map_info->file;
-      faddr.ofs = frames[index].uaddr - map_info->start;
-      faddr.length = pg_round_up(frames[index].uaddr) > (map_info->start + map_info->length) ?
-          map_info->length % PGSIZE : PGSIZE;
+      faddr.ofs = to_evict->uaddr - map_info->start;
+      faddr.length = pg_round_up(to_evict->uaddr) >
+          (map_info->start + map_info->length)
+          ? map_info->length % PGSIZE : PGSIZE;
       faddr.writable = true;
       faddr.zeroed = false;
 
-      struct page * page = page_add_fs(&(frames[index].thread->pages), frames[index].uaddr, faddr, false);
+      struct page * page = page_add_fs(&to_evict->thread->pages,
+          to_evict->uaddr, faddr, false);
+
       lock_release (&frame_lock);
       if (page == NULL)
         return NULL;
 
       // write back to file if the page is dirty
-      if (pagedir_is_dirty (frames[index].thread->pagedir, frames[index].uaddr))
+      if (pagedir_is_dirty (to_evict->thread->pagedir, to_evict->uaddr))
         {
           lock_acquire (&fs_lock);
-          ASSERT ((uint32_t)file_write_at (map_info->file, ptov(index << FRAME_SHIFT), faddr.length, faddr.ofs) == faddr.length);
+          ASSERT ((uint32_t) file_write_at (map_info->file,
+              ptov(index << FRAME_SHIFT), faddr.length, faddr.ofs)
+              == faddr.length);
           lock_release (&fs_lock);
         }
       sema_up (&page->ready);
@@ -102,7 +112,9 @@ frame_evict (void)
       if (swap_index == -1)
         return NULL;
 
-      struct page * page = page_add_swap (&(frames[index].thread->pages), frames[index].uaddr, swap_index, false);
+      struct page * page = page_add_swap (&to_evict->thread->pages,
+          to_evict->uaddr, swap_index, false);
+
       lock_release (&frame_lock);
       if (page == NULL)
         return NULL;
@@ -122,7 +134,8 @@ void frame_free (void * kpage)
   palloc_free_page(kpage);
 }
 
-// when user tries to add an entry to the page table, update the frame table also
+// when user tries to add an entry to the page table, update the frame
+// table also
 void frame_set_mapping (void *upage, void *kpage, bool writable UNUSED)
 {
   uint32_t index = vtop (kpage) >> FRAME_SHIFT;
@@ -145,6 +158,7 @@ void frame_unpin_memory (void *kpage)
   frames[index].pinned = false;
 }
 
+// Decide if a page is backed by a memory mapped file
 static struct mmap_info *
 get_mmap_info (struct thread *thread, void *uaddr)
 {

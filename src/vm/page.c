@@ -13,15 +13,15 @@
 
 static void page_read_in (struct page * page, void * kpage);
 
-// when a process end, destory the supplimental page table and free all
-// the resources
+/* when a process end, destory the supplimental page table and free all
+   the resources. */
 void
 page_destory (struct hash * pages)
 {
   hash_destroy (pages, page_destructor);
 }
 
-// Remove the page at vaddr. Return true if the page was actually removed.
+/* Remove the page at vaddr. Return true if the page was actually removed. */
 bool
 page_remove_mmap (struct hash * pages, void *vaddr)
 {
@@ -38,10 +38,6 @@ page_remove_mmap (struct hash * pages, void *vaddr)
     }
 }
 
-// add a mapping to the supplemental page table, from virtual address to
-// where the data actually resides
-// called when add a new mapping/frame table need to evict a page
-// need to revisit for concurrency concerns
 struct page *
 page_add_swap (struct hash * pages, void * vaddr,
                int index, bool ready)
@@ -78,7 +74,7 @@ page_add_fs (struct hash * pages, void * vaddr, struct fs_addr faddr, bool ready
   return page;
 }
 
-// valid vaddr: (vaddr >= esp) or (esp - vaddr <= 32)
+/* valid stack vaddr: (vaddr >= esp) or (esp - vaddr <= 32). */
 bool
 page_stack_growth_handler (struct hash * pages, void * vaddr, void * esp, bool pin_memory)
 {
@@ -93,7 +89,9 @@ page_stack_growth_handler (struct hash * pages, void * vaddr, void * esp, bool p
       struct page * page;
       if ((page = page_lookup (pages, pg_round_down(vaddr), true)) != NULL)
         {
+          // wait for a maybe evicted page to be written to swap
           sema_down (&page->ready);
+          // make sure the page for stack can only reside in swap
           ASSERT (page->swap_index != -1);
           swap_read (page->swap_index, kpage);
           swap_free (page->swap_index);
@@ -123,8 +121,8 @@ page_stack_growth_handler (struct hash * pages, void * vaddr, void * esp, bool p
                            pg_round_down(vaddr), kpage, true);
 }
 
-// put vaddr to a frame and page table, also remove the mapping from
-// supplemental page table
+/* put vaddr to a frame and page table, also remove the mapping from
+   supplemental page table. */
 bool
 page_fault_handler (struct hash * pages, const void * vaddr, bool pin_memory)
 {
@@ -134,7 +132,9 @@ page_fault_handler (struct hash * pages, const void * vaddr, bool pin_memory)
   if ((page = page_lookup (pages, pg_round_down(vaddr), true)) == NULL)
     return false;
   
+  // wait for a maybe evicted page to be written to swap
   sema_down (&page->ready);
+
   // get an empty frame from the frame table
   void * kpage = frame_get(0);
   if (kpage == NULL)
@@ -168,6 +168,7 @@ page_read_in (struct page * page, void * kpage)
       swap_free (page->swap_index);
       return;
     }
+
   // if the page is all zero, don't need to read anything from disk
   if (page->faddr.zeroed)
     {
@@ -181,14 +182,16 @@ page_read_in (struct page * page, void * kpage)
   memset (kpage + page->faddr.length, 0, PGSIZE - page->faddr.length);
 }
 
-// TODO: need to deny write access to a read only page and any access to kernel
-// memory
-// lookup and remove the element from pages
+/* Lookup a page and remove it from the hash table optionally. */
 struct page *
 page_lookup (struct hash * pages, void *vaddr, bool to_delete)
 {
   struct page p;
   struct hash_elem *e;
+
+  // deny access to kernel vitual address
+  if (!is_user_vaddr (vaddr))
+    return NULL;
 
   p.vaddr = vaddr;
   if (to_delete)
