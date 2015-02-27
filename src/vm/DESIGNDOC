@@ -46,6 +46,9 @@ struct fs_addr
   bool zeroed;            /* true if the page is all zero */
 };
 
+struct lock pagetable_lock;
+The lock to protect access to supplemental page table.
+
 struct page
 {
   /* a semaphone indicate the page is ready to be loaded

@@ -13,6 +13,7 @@
 #include <stdio.h>
 
 static void page_read_in (struct page * page, void * kpage);
+struct lock pagetable_lock;
 
 /* when a process end, destory the supplimental page table and free all
    the resources. */
@@ -21,8 +22,6 @@ page_destory (struct hash * pages)
 {
   hash_destroy (pages, page_destructor);
 }
-
-struct lock pagetable_lock;
 
 /* Remove the page at vaddr. Return true if the page was actually removed. */
 bool
