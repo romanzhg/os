@@ -931,16 +931,17 @@ thread_munmap (mapid_t mapping)
 {
   struct mmap_info * mmap_info = NULL;
 
-  // locate mmap_info
   struct list_elem *e;
-  for (e = list_begin (&thread_current () -> mmap_list); e != list_end (&thread_current () -> mmap_list); e = list_next (e))
+  for (e = list_begin (&thread_current ()->mmap_list);
+       e != list_end (&thread_current()-> mmap_list); e = list_next (e))
     {
       struct mmap_info * tmp = list_entry (e, struct mmap_info, elem);
-      if (tmp->mapid == mapping){
-        mmap_info = tmp;
-        list_remove(e);
-        break;
-      }
+      if (tmp->mapid == mapping)
+        {
+          mmap_info = tmp;
+          list_remove(e);
+          break;
+        }
     }
 
   if (mmap_info == NULL)
@@ -954,20 +955,21 @@ thread_munmap (mapid_t mapping)
 static void
 thread_munmap_all (void)
 {
-  lock_acquire (&frame_lock);
   struct list_elem *e;
-  for (e = list_begin (&thread_current () -> mmap_list); e != list_end (&thread_current () -> mmap_list);)
+  for (e = list_begin (&thread_current ()->mmap_list);
+       e != list_end (&thread_current ()->mmap_list);)
     {
       struct mmap_info * tmp = list_entry (e, struct mmap_info, elem);
       e = list_remove(e);
+      lock_acquire (&frame_lock);
       release_mmap (tmp);
+      lock_release (&frame_lock);
     }
-  lock_release (&frame_lock);
 }
 
 /* Remove all the pages from supplemental page table or real memory, write it
    back to fs if needed.Need to call this function with the frame_lock,
-    otherwise the pagedir content for this process may chagne */
+   otherwise the pagedir content for this process may chagne */
 static void
 release_mmap (struct mmap_info * mmap_info)
 {
