@@ -450,12 +450,13 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      struct fs_addr addr;
-      addr.file = file;
-      addr.ofs = ofs;
-      addr.length = page_read_bytes;
-      addr.writable = writable;
-      if (!page_add_fs (&thread_current ()->pages, upage, addr))
+      struct fs_addr faddr;
+      faddr.file = file;
+      faddr.ofs = ofs;
+      faddr.length = page_read_bytes;
+      faddr.writable = writable;
+      faddr.zeroed = (page_zero_bytes == PGSIZE);
+      if (!page_add_fs (&thread_current ()->pages, upage, faddr))
         return false;
       ofs += page_read_bytes;
 

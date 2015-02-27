@@ -58,14 +58,14 @@ page_add_swap (struct hash * pages, void * vaddr,
 }
 
 bool
-page_add_fs (struct hash * pages, void * vaddr, struct fs_addr addr)
+page_add_fs (struct hash * pages, void * vaddr, struct fs_addr faddr)
 {
   struct page * page = malloc (sizeof (struct page));
   if (page == NULL)
     return false;
   page->vaddr = vaddr;
   page->swap_index = -1;
-  page->faddr = addr;
+  page->faddr = faddr;
   ASSERT (hash_insert (pages, &page->hash_elem) == NULL);
   return true;
 }
@@ -151,12 +151,19 @@ page_fault_handler (struct hash * pages, void * vaddr)
   return rtn;
 }
 
-// TODO: see if need to handle return value?
 static void
 page_read_from_fs (struct page * page, void * kpage)
 {
+  // if the page is all zero, don't need to read anything from disk
+  if (page->faddr.zeroed)
+    {
+      memset (kpage, 0, PGSIZE);
+      return;
+    }
+
   file_seek (page->faddr.file, page->faddr.ofs);
-  file_read (page->faddr.file, kpage, page->faddr.length);
+  ASSERT (file_read (page->faddr.file, kpage, page->faddr.length)
+      == page->faddr.length);
   memset (kpage + page->faddr.length, 0, PGSIZE - page->faddr.length);
 }
 

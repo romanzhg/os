@@ -13,6 +13,7 @@ struct fs_addr
   off_t ofs;              /* the offset for this page in the mmapped file */
   size_t length;          /* valid bytes for the page */
   bool writable;          /* is this file writable */
+  bool zeroed;            /* true if the page is all zero */
 };
 
 struct page 

@@ -198,7 +198,6 @@ mmap (int fd, void *addr)
   while (tmp_file_len > 0)
     {
       size_t tmp_length = tmp_file_len < PGSIZE ? tmp_file_len : PGSIZE;
-      //printf ("uaddr to look at: %p\n", addr+tmp_ofs);
       if (page_lookup (&thread_current ()->pages, addr + tmp_ofs, false) != NULL)
         {
           lock_release (&frame_lock);
@@ -220,16 +219,16 @@ mmap (int fd, void *addr)
     {
       size_t page_read_bytes = file_len < PGSIZE ? file_len : PGSIZE;
 
-      struct fs_addr fs_addr;
-      fs_addr.file = file;
-      fs_addr.ofs = ofs;
-      fs_addr.length = page_read_bytes;
-      // TODO: should it always be true?
-      fs_addr.writable = true;
+      struct fs_addr faddr;
+      faddr.file = file;
+      faddr.ofs = ofs;
+      faddr.length = page_read_bytes;
+      faddr.writable = true;
+      faddr.zeroed = false;
 
       // TODO: need to release the resources already allocated in this while loop
       // TODO: should allocate the page at once, then fill them in. need refactor
-      if (!page_add_fs (&thread_current ()->pages, addr, fs_addr))
+      if (!page_add_fs (&thread_current ()->pages, addr, faddr))
         return -1;
 
       ofs += PGSIZE;
