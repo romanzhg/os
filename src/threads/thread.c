@@ -428,8 +428,11 @@ thread_exit (void)
 #ifdef USERPROG
   thread_munmap_all ();
   page_destory (&thread_current () -> pages);
+
   enum intr_level old_level = intr_disable ();
   struct thread *current = thread_current ();
+
+  // exit status -2 means the exec wasn't load correctly
   if (current->exit_status != -2)
     printf ("%s: exit(%d)\n", current->name, current->exit_status);
 
@@ -444,9 +447,8 @@ thread_exit (void)
   // wait for parent to get
   sema_down(&current->to_exit);
 
-  // release resources
-  // TODO: is disabling interruption here necessary?
-  old_level = intr_disable ();
+  // release resources, do not need to disable interrupt since all
+  // resources are local
   struct list_elem *e;
   for (e = list_begin (&current->children); e != list_end (&current->children);)
     {
@@ -463,9 +465,6 @@ thread_exit (void)
       e = list_remove(e);
       free(file_des);
     }
-
-
-  intr_set_level (old_level);
 #endif
 
   /* Remove thread from all threads list, set our status to dying,

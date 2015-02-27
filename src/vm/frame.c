@@ -50,7 +50,6 @@ static void *
 frame_evict (void)
 {
   lock_acquire (&frame_lock);
-  // TODO: if all memory is pinned this would be a infinite loop
   while (true)
     {
       clock_hand = (clock_hand + 1) % init_ram_pages; 
