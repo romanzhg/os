@@ -29,6 +29,8 @@ struct page
   struct hash_elem hash_elem;          /* element for the page table*/
 }; 
 
+extern struct lock pagetable_lock;
+
 struct page *page_add_fs (struct hash *pages, void *vaddr,
                           struct fs_addr addr, bool ready);
 struct page *page_add_swap (struct hash *pages, void *vaddr,

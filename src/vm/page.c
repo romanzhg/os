@@ -4,6 +4,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/palloc.h"
+#include "threads/synch.h"
 #include "userprog/pagedir.h"
 #include "vm/frame.h"
 #include "vm/swap.h"
@@ -21,6 +22,8 @@ page_destory (struct hash * pages)
   hash_destroy (pages, page_destructor);
 }
 
+struct lock pagetable_lock;
+
 /* Remove the page at vaddr. Return true if the page was actually removed. */
 bool
 page_remove_mmap (struct hash * pages, void *vaddr)
@@ -28,7 +31,9 @@ page_remove_mmap (struct hash * pages, void *vaddr)
   struct page p;
   struct hash_elem *e;
   p.vaddr = vaddr;
+  lock_acquire (&pagetable_lock);
   e = hash_delete (pages, &p.hash_elem);
+  lock_release (&pagetable_lock);
   if (e == NULL)
     return false;
   else
@@ -52,7 +57,9 @@ page_add_swap (struct hash * pages, void * vaddr,
     sema_init(&page->ready, 1);
   else
     sema_init(&page->ready, 0);
+  lock_acquire (&pagetable_lock);
   ASSERT (hash_insert (pages, &page->hash_elem) == NULL);
+  lock_release (&pagetable_lock);
   return page;
 }
 
@@ -70,7 +77,9 @@ page_add_fs (struct hash * pages, void * vaddr, struct fs_addr faddr, bool ready
     sema_init(&page->ready, 1);
   else
     sema_init(&page->ready, 0);
+  lock_acquire (&pagetable_lock);
   ASSERT (hash_insert (pages, &page->hash_elem) == NULL);
+  lock_release (&pagetable_lock);
   return page;
 }
 
@@ -194,10 +203,12 @@ page_lookup (struct hash * pages, void *vaddr, bool to_delete)
     return NULL;
 
   p.vaddr = vaddr;
+  lock_acquire (&pagetable_lock);
   if (to_delete)
     e = hash_delete (pages, &p.hash_elem);
   else
     e = hash_find (pages, &p.hash_elem);
+  lock_release (&pagetable_lock);
   return e != NULL ? hash_entry (e, struct page, hash_elem) : NULL;
 }
 

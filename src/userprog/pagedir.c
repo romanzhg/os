@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <string.h>
 #include "threads/init.h"
+#include "threads/interrupt.h"
 #include "threads/pte.h"
 #include "threads/palloc.h"
 #include "userprog/process.h"
@@ -276,14 +277,17 @@ pagedir_remove (uint32_t *pd, struct mmap_info *mmap_info, uint32_t ofs, uint32_
     }
 
   // if the page is modified and backed by the fs, write it to fs
+  lock_acquire (&fs_lock);
   if (pagedir_is_dirty (pd, mmap_info->start + ofs))
     {
-      lock_acquire (&fs_lock);
       ASSERT ((uint32_t)file_write_at (mmap_info->file, kpage, bytes, ofs) == bytes);
-      lock_release (&fs_lock);
     }
+  lock_release (&fs_lock);
 
+  enum intr_level old_level = intr_disable ();
   pagedir_clear_page (pd, mmap_info->start + ofs);
+  intr_set_level (old_level);
+
   frame_free(kpage);
   return true;
 }

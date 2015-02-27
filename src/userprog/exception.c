@@ -149,7 +149,6 @@ page_fault (struct intr_frame *f)
   not_present = (f->error_code & PF_P) == 0;
   user = (f->error_code & PF_U) != 0;
 
-  // handle page fault or stack growth
   if (not_present)
     {
       // if the faulted address is within 8MB below PHYBASE, then consider it
@@ -174,6 +173,7 @@ page_fault (struct intr_frame *f)
             return;
         }
     }
+
   // writing to a read only page or fallover from above
   thread_set_exit_status(-1);
   thread_exit ();

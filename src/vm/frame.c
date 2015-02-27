@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "threads/interrupt.h"
 #include "threads/loader.h"
 #include "threads/malloc.h"
 #include "threads/palloc.h"
@@ -11,7 +12,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
-#include "userprog/process.h"       /* for the file system lock */
+#include "userprog/process.h"
 #include "vm/page.h"
 #include "vm/swap.h"
 
@@ -28,6 +29,7 @@ struct lock frame_lock;
 void frame_init (void)
 {
   lock_init (&frame_lock);
+  lock_init (&pagetable_lock);
   frames = (struct frame *) malloc (init_ram_pages * sizeof (struct frame));
 
   uint32_t i;
@@ -50,6 +52,7 @@ static void *
 frame_evict (void)
 {
   lock_acquire (&frame_lock);
+  enum intr_level old_level = intr_disable ();
   while (true)
     {
       clock_hand = (clock_hand + 1) % init_ram_pages; 
@@ -89,6 +92,7 @@ frame_evict (void)
       struct page * page = page_add_fs(&to_evict->thread->pages,
           to_evict->uaddr, faddr, false);
 
+      intr_set_level (old_level);
       lock_release (&frame_lock);
       if (page == NULL)
         return NULL;
@@ -114,6 +118,7 @@ frame_evict (void)
       struct page * page = page_add_swap (&to_evict->thread->pages,
           to_evict->uaddr, swap_index, false);
 
+      intr_set_level (old_level);
       lock_release (&frame_lock);
       if (page == NULL)
         return NULL;
