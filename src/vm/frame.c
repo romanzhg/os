@@ -42,18 +42,17 @@ void frame_init (void)
 // Get a new page, return it's kernel virtual address. Return NULL if failed.
 void *frame_get (int flags)
 {
-  lock_acquire (&frame_lock);
   void * rtn = palloc_get_page (flags | PAL_USER);
   if (rtn == NULL) {
     rtn = frame_evict();
   }
-  lock_release (&frame_lock);
   return rtn;
 }
 
 static void *
 frame_evict (void)
 {
+  lock_acquire (&frame_lock);
   while (true)
   {
     clock_value = (clock_value + 1) % init_ram_pages; 
@@ -85,7 +84,9 @@ frame_evict (void)
       faddr.writable = true;
       faddr.zeroed = false;
 
-      if (!page_add_fs(&(frames[index].thread->pages), frames[index].uaddr, faddr))
+      struct page * page = page_add_fs(&(frames[index].thread->pages), frames[index].uaddr, faddr, false);
+      lock_release (&frame_lock);
+      if (page == NULL)
         return NULL;
 
       // write back to file if the page is dirty
@@ -95,6 +96,7 @@ frame_evict (void)
           ASSERT ((uint32_t)file_write_at (map_info->file, ptov(index << FRAME_SHIFT), faddr.length, faddr.ofs) == faddr.length);
           lock_release (&fs_lock);
         }
+      sema_up (&page->ready);
     }
   else
     {
@@ -103,9 +105,13 @@ frame_evict (void)
       if (swap_index == -1)
         return NULL;
 
-      if (!page_add_swap (&(frames[index].thread->pages), frames[index].uaddr, swap_index))
+      struct page * page = page_add_swap (&(frames[index].thread->pages), frames[index].uaddr, swap_index, false);
+      lock_release (&frame_lock);
+      if (page == NULL)
         return NULL;
+
       swap_write (swap_index, ptov(index << FRAME_SHIFT));
+      sema_up (&page->ready);
     }
   
   return ptov(index << FRAME_SHIFT);

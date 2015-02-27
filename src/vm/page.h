@@ -6,6 +6,7 @@
 #include "devices/block.h"
 #include "filesys/off_t.h"
 #include "lib/kernel/hash.h"
+#include "threads/synch.h"
 
 struct fs_addr
 {
@@ -17,15 +18,17 @@ struct fs_addr
 };
 
 struct page 
-{ 
+{
+  /* a semaphone indicate the page is ready to be loaded from file system or swap */
+  struct semaphore ready;
   void *vaddr;            /* the virtual address for this page */
   int swap_index;         /* swap slot for the page, -1 if in file system */
   struct fs_addr faddr;   /* location for the page in file system */
   struct hash_elem hash_elem;          /* element for the page table*/
 }; 
 
-bool page_add_fs (struct hash * pages, void * vaddr, struct fs_addr addr);
-bool page_add_swap (struct hash * pages, void * vaddr, int index);
+struct page * page_add_fs (struct hash * pages, void * vaddr, struct fs_addr addr, bool ready);
+struct page * page_add_swap (struct hash * pages, void * vaddr, int index, bool ready);
 void page_destory (struct hash * pages);
 bool page_fault_handler (struct hash * pages, const void * vaddr, bool pin_memory);
 bool page_stack_growth_handler (struct hash * pages, void * vaddr, void * esp, bool pin_memory);

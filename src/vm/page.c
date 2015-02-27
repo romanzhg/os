@@ -42,31 +42,40 @@ page_remove_mmap (struct hash * pages, void *vaddr)
 // where the data actually resides
 // called when add a new mapping/frame table need to evict a page
 // need to revisit for concurrency concerns
-bool
+struct page *
 page_add_swap (struct hash * pages, void * vaddr,
-               int index)
+               int index, bool ready)
 {
   struct page * page = malloc (sizeof (struct page));
   if (page == NULL)
-    return false;
+    return NULL;
 
   page->vaddr = vaddr;
   page->swap_index = index;
+  if (ready)
+    sema_init(&page->ready, 1);
+  else
+    sema_init(&page->ready, 0);
   ASSERT (hash_insert (pages, &page->hash_elem) == NULL);
-  return true;
+  return page;
 }
 
-bool
-page_add_fs (struct hash * pages, void * vaddr, struct fs_addr faddr)
+struct page *
+page_add_fs (struct hash * pages, void * vaddr, struct fs_addr faddr, bool ready)
 {
   struct page * page = malloc (sizeof (struct page));
   if (page == NULL)
-    return false;
+    return NULL;
+
   page->vaddr = vaddr;
   page->swap_index = -1;
   page->faddr = faddr;
+  if (ready)
+    sema_init(&page->ready, 1);
+  else
+    sema_init(&page->ready, 0);
   ASSERT (hash_insert (pages, &page->hash_elem) == NULL);
-  return true;
+  return page;
 }
 
 // valid vaddr: (vaddr >= esp) or (esp - vaddr <= 32)
@@ -76,21 +85,23 @@ page_stack_growth_handler (struct hash * pages, void * vaddr, void * esp, bool p
   void *kpage;
   if ((uint32_t) vaddr >= (uint32_t) esp)
     {
-      /* valid address, do nothing */
       kpage = frame_get (0);
       if (kpage == NULL)
         return false;
-      if (pin_memory)
-        frame_pin_memory (kpage);
 
-      // the page maybe in swap
+      frame_pin_memory (kpage);
       struct page * page;
       if ((page = page_lookup (pages, pg_round_down(vaddr), true)) != NULL)
         {
+          sema_down (&page->ready);
           ASSERT (page->swap_index != -1);
           swap_read (page->swap_index, kpage);
           swap_free (page->swap_index);
         }
+
+      if (!pin_memory)
+        frame_unpin_memory (kpage);
+
       free (page);
       return pagedir_set_page (thread_current ()->pagedir,
                                pg_round_down(vaddr), kpage, true);
@@ -123,15 +134,16 @@ page_fault_handler (struct hash * pages, const void * vaddr, bool pin_memory)
   if ((page = page_lookup (pages, pg_round_down(vaddr), true)) == NULL)
     return false;
   
+  sema_down (&page->ready);
   // get an empty frame from the frame table
   void * kpage = frame_get(0);
   if (kpage == NULL)
     return false;
 
-  if (pin_memory)
-    frame_pin_memory (kpage);
-
+  frame_pin_memory (kpage);
   page_read_in (page, kpage);
+  if (!pin_memory)
+    frame_unpin_memory (kpage);
 
   bool rtn;
   // install the page

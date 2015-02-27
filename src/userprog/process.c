@@ -456,8 +456,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       faddr.length = page_read_bytes;
       faddr.writable = writable;
       faddr.zeroed = (page_zero_bytes == PGSIZE);
-      if (!page_add_fs (&thread_current ()->pages, upage, faddr))
+      if (!page_add_fs (&thread_current ()->pages, upage, faddr, true))
         return false;
+
       ofs += page_read_bytes;
 
       /* Advance. */

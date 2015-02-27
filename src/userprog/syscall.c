@@ -230,7 +230,7 @@ mmap (int fd, void *addr)
 
       // TODO: need to release the resources already allocated in this while loop
       // TODO: should allocate the page at once, then fill them in. need refactor
-      if (!page_add_fs (&thread_current ()->pages, addr, faddr))
+      if (!page_add_fs (&thread_current ()->pages, addr, faddr, true))
         return -1;
 
       ofs += PGSIZE;
