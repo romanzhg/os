@@ -36,6 +36,7 @@ void frame_init (void)
   uint32_t i;
   for (i = 0; i < init_ram_pages; i++)
     frames[i].present = false;
+    frames[i].pinned = false;
 }
 
 // Get a new page, return it's kernel virtual address. Return NULL if failed.
@@ -56,7 +57,8 @@ frame_evict (void)
   while (true)
   {
     clock_value = (clock_value + 1) % init_ram_pages; 
-    if (frames[clock_value].present == true)
+    if (frames[clock_value].present == true
+        && frames[clock_value].pinned == false)
       {
         if (pagedir_is_accessed (frames[clock_value].thread->pagedir, frames[clock_value].uaddr))
           {
@@ -113,6 +115,7 @@ void frame_free (void * kpage)
 {
   uint32_t index = vtop (kpage) >> FRAME_SHIFT;
   frames[index].present = false;
+  frames[index].pinned = false;
   palloc_free_page(kpage);
 }
 
@@ -125,6 +128,18 @@ void frame_set_mapping (void *upage, void *kpage, bool writable UNUSED)
   frames[index].thread = thread_current ();
   frames[index].uaddr = upage;
   frames[index].present = true;
+}
+
+void frame_pin_memory (void *kpage)
+{
+  uint32_t index = vtop (kpage) >> FRAME_SHIFT;
+  frames[index].pinned = true;
+}
+
+void frame_unpin_memory (void *kpage)
+{
+  uint32_t index = vtop (kpage) >> FRAME_SHIFT;
+  frames[index].pinned = false;
 }
 
 static struct mmap_info *

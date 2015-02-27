@@ -7,7 +7,7 @@
 
 struct frame
 {
-  // TODO: need to implement memory pinning
+  bool pinned;
 
   // if needs to traversal the list may need to add a bool here
   // to track if the frame can be put in page table
@@ -28,5 +28,7 @@ void frame_init(void);
 void *frame_get(int flags);
 void frame_free(void * kpage);
 void frame_set_mapping (void *upage, void *kpage, bool writable);
+void frame_pin_memory (void *kpage);
+void frame_unpin_memory (void *kpage);
 
 #endif

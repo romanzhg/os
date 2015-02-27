@@ -71,7 +71,7 @@ page_add_fs (struct hash * pages, void * vaddr, struct fs_addr faddr)
 
 // valid vaddr: (vaddr >= esp) or (esp - vaddr <= 32)
 bool
-page_stack_growth_handler (struct hash * pages, void * vaddr, void * esp)
+page_stack_growth_handler (struct hash * pages, void * vaddr, void * esp, bool pin_memory)
 {
   void *kpage;
   if ((uint32_t) vaddr >= (uint32_t) esp)
@@ -80,6 +80,8 @@ page_stack_growth_handler (struct hash * pages, void * vaddr, void * esp)
       kpage = frame_get (0);
       if (kpage == NULL)
         return false;
+      if (pin_memory)
+        frame_pin_memory (kpage);
 
       // the page maybe in swap
       struct page * page;
@@ -103,6 +105,9 @@ page_stack_growth_handler (struct hash * pages, void * vaddr, void * esp)
   if (kpage == NULL)
     return false;
 
+  if (pin_memory)
+    frame_pin_memory (kpage);
+
   return pagedir_set_page (thread_current ()->pagedir,
                            pg_round_down(vaddr), kpage, true);
 }
@@ -110,7 +115,7 @@ page_stack_growth_handler (struct hash * pages, void * vaddr, void * esp)
 // put vaddr to a frame and page table, also remove the mapping from
 // supplemental page table
 bool
-page_fault_handler (struct hash * pages, void * vaddr)
+page_fault_handler (struct hash * pages, const void * vaddr, bool pin_memory)
 {
   struct page * page;
 
@@ -119,10 +124,12 @@ page_fault_handler (struct hash * pages, void * vaddr)
     return false;
   
   // get an empty frame from the frame table
-  // TODO: what if the allocated kpage was evicted before we even install it?
   void * kpage = frame_get(0);
   if (kpage == NULL)
     return false;
+
+  if (pin_memory)
+    frame_pin_memory (kpage);
 
   page_read_in (page, kpage);
 

@@ -126,7 +126,6 @@ static void
 page_fault (struct intr_frame *f) 
 {
   bool not_present;  /* True: not-present page, false: writing r/o page. */
-  bool write;        /* True: access was write, false: access was read. */
   bool user;         /* True: access by user, false: access by kernel. */
   void *fault_addr;  /* Fault address. */
 
@@ -148,7 +147,6 @@ page_fault (struct intr_frame *f)
 
   /* Determine cause. */
   not_present = (f->error_code & PF_P) == 0;
-  write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
   // handle page fault or stack growth
@@ -165,7 +163,7 @@ page_fault (struct intr_frame *f)
           else
             esp = thread_current ()->uesp;
 
-          if (page_stack_growth_handler (&thread_current ()->pages, fault_addr, esp))
+          if (page_stack_growth_handler (&thread_current ()->pages, fault_addr, esp, false))
             return; 
           else
             {
@@ -175,7 +173,7 @@ page_fault (struct intr_frame *f)
         }
       else
         {
-          if (page_fault_handler (&thread_current ()->pages, fault_addr))
+          if (page_fault_handler (&thread_current ()->pages, fault_addr, false))
             return;
           else
             {
@@ -190,13 +188,4 @@ page_fault (struct intr_frame *f)
       thread_set_exit_status(-1);
       thread_exit ();
     }
-  /* To implement virtual memory, delete the rest of the function
-     body, and replace it with code that brings in the page to
-     which fault_addr refers. */
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
-          fault_addr,
-          not_present ? "not present" : "rights violation",
-          write ? "writing" : "reading",
-          user ? "user" : "kernel");
-  kill (f);
 }

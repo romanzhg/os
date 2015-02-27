@@ -44,6 +44,8 @@ static void get_arg (const uint8_t *uaddr, int * args);
 static bool is_valid_filename (const char* source);
 static bool is_valid_uaddr (const void* p, uint32_t range);
 static bool is_valid_cmdline (const char* source);
+static bool pin_memory (const void *buffer, unsigned length);
+static void unpin_memory (const void *buffer, unsigned length);
 
 void
 syscall_init (void) 
@@ -334,9 +336,12 @@ write (int fd, const void *buffer, unsigned length) {
         {
           exit (-1);
         }
+      if (!pin_memory (buffer, length))
+        exit (-1);
       lock_acquire (&fs_lock);
       rtn = file_write (file, buffer, length);
       lock_release (&fs_lock);
+      unpin_memory (buffer, length);
     }
   return rtn;
 }
@@ -365,9 +370,12 @@ read (int fd, void *buffer, unsigned length){
         {
           exit (-1);
         }
+      if (!pin_memory (buffer, length))
+        exit (-1);
       lock_acquire (&fs_lock);
       rtn = file_read (file, buffer, length);
       lock_release (&fs_lock);
+      unpin_memory (buffer, length);
     }
   return rtn;
 }
@@ -419,4 +427,82 @@ is_valid_cmdline (const char* source)
     }
 
   return i != PGSIZE;
+}
+
+static bool
+pin_memory (const void *buffer, unsigned length)
+{
+  void *base_page = pg_round_down (buffer);
+  void *end_page = pg_round_down (buffer + length);
+  int i;
+  for (i = 0; (base_page + i * PGSIZE) <= end_page; i++)
+    {
+      lock_acquire (&frame_lock);
+      void * kpage = pagedir_get_page (thread_current ()->pagedir, base_page + i * PGSIZE);
+      if (kpage == NULL)
+        {
+          lock_release (&frame_lock);
+          if (((uint32_t) PHYS_BASE - (uint32_t) (base_page + i * PGSIZE)) < (uint32_t) 0x800000)
+            {
+              if (!page_stack_growth_handler (&(thread_current ()->pages), base_page + i * PGSIZE, thread_current ()->uesp, true))
+                return false;
+            }
+          else
+            {
+              if (!page_fault_handler (&(thread_current ()->pages), base_page + i * PGSIZE, true))
+                return false;
+            }
+        }
+      else
+        {
+          frame_pin_memory (kpage);
+          lock_release (&frame_lock);
+        }
+    }
+/*
+  int i = 0;
+  do
+    {
+      lock_acquire (&frame_lock);
+      void * kpage = pagedir_get_page (thread_current ()->pagedir, buffer + i * PGSIZE);
+      if (kpage == NULL)
+        {
+          lock_release (&frame_lock);
+          if (!page_fault_handler (&(thread_current ()->pages), buffer + i * PGSIZE, true))
+            return false;
+        }
+      else
+        {
+          frame_pin_memory (kpage);
+          lock_release (&frame_lock);
+        }
+      i++;
+    } while ((unsigned) i * PGSIZE < length);
+*/
+  return true;
+}
+
+static void
+unpin_memory (const void *buffer, unsigned length)
+{
+  void * base_page = pg_round_down (buffer);
+  void * end_page = pg_round_down (buffer + length);
+  int i;
+  for (i = 0; (base_page + i * PGSIZE) <= end_page; i++)
+    {
+      void * kpage = pagedir_get_page (thread_current ()->pagedir, base_page + i * PGSIZE);
+      ASSERT (kpage != NULL);
+      frame_unpin_memory (kpage);
+    }
+
+/*
+  int i = 0;
+  do
+    {
+      void * kpage = pagedir_get_page (thread_current ()->pagedir, buffer + i * PGSIZE);
+      ASSERT (kpage != NULL);
+      frame_unpin_memory (kpage);
+      i++;
+    } while ((unsigned) i * PGSIZE < length);
+*/
 }
