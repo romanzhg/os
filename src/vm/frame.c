@@ -11,6 +11,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
+#include "userprog/process.h"       /* for the file system lock */
 #include "vm/page.h"
 #include "vm/swap.h"
 
@@ -37,13 +38,11 @@ void frame_init (void)
     frames[i].present = false;
 }
 
-// for now simply get a new page from palloc, retrn null if there is no new page
-// when eviction is implemented, evict a page to swap/filesys if needed
+// Get a new page, return it's kernel virtual address. Return NULL if failed.
 void *frame_get (int flags)
 {
   lock_acquire (&frame_lock);
   void * rtn = palloc_get_page (flags | PAL_USER);
-  // chose a page to evict
   if (rtn == NULL) {
     rtn = frame_evict();
   }
@@ -89,7 +88,11 @@ frame_evict (void)
 
       // write back to file if the page is dirty
       if (pagedir_is_dirty (frames[clock_value].thread->pagedir, frames[index].uaddr))
-        ASSERT ((uint32_t)file_write_at (map_info->file, ptov(index << FRAME_SHIFT), faddr.length, faddr.ofs) == faddr.length);
+        {
+          lock_acquire (&fs_lock);
+          ASSERT ((uint32_t)file_write_at (map_info->file, ptov(index << FRAME_SHIFT), faddr.length, faddr.ofs) == faddr.length);
+          lock_release (&fs_lock);
+        }
     }
   else
     {
@@ -106,9 +109,6 @@ frame_evict (void)
   return ptov(index << FRAME_SHIFT);
 }
 
-// should call with the frame lock hold
-// put the frame back to frame list
-// TODO: need to revisit page deletion
 void frame_free (void * kpage)
 {
   uint32_t index = vtop (kpage) >> FRAME_SHIFT;

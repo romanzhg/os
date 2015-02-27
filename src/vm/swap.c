@@ -26,9 +26,7 @@ swap_init (void)
   swap_size = ((uint32_t) block_size (swap_space)) / BLOCKS_PER_PAGE;
   swap_table = malloc (swap_size * sizeof (struct swap));
   if (swap_table == NULL)
-    {
-    ASSERT(false);
-    }
+    PANIC ("Cannot allocate space for swap table");
 
   int i;
   for (i = 0; i < swap_size; i++)
@@ -48,7 +46,7 @@ int swap_get (void)
         return i;
       }
   lock_release (&swap_lock);
-  return -1;
+  PANIC ("Out of swap space");
 }
 
 // free the swap slot

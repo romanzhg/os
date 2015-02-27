@@ -5,10 +5,8 @@
 #include "threads/init.h"
 #include "threads/pte.h"
 #include "threads/palloc.h"
+#include "userprog/process.h"
 #include "vm/frame.h"
-
-// for debug, to be removed
-#include <stdio.h>
 
 static uint32_t *active_pd (void);
 static void invalidate_pagedir (uint32_t *);
@@ -280,7 +278,9 @@ pagedir_remove (uint32_t *pd, struct mmap_info *mmap_info, uint32_t ofs, uint32_
   // if the page is modified and backed by the fs, write it to fs
   if (pagedir_is_dirty (pd, mmap_info->start + ofs))
     {
+      lock_acquire (&fs_lock);
       ASSERT ((uint32_t)file_write_at (mmap_info->file, kpage, bytes, ofs) == bytes);
+      lock_release (&fs_lock);
     }
 
   pagedir_clear_page (pd, mmap_info->start + ofs);
