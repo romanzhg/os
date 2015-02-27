@@ -38,7 +38,7 @@ struct hash pages;                  /* supplemental page table*/
 Structure defined for the supplemental page table:
 
 struct fs_addr
-{                                                                                                 
+{
   struct file * file;     /* the mmapped file */
   off_t ofs;              /* the offset for this page in the mmapped file */
   size_t length;          /* valid bytes in this frame */
@@ -47,8 +47,9 @@ struct fs_addr
 };
 
 struct page
-{ 
-  /* a semaphone indicate the page is ready to be loaded from file system or swap */
+{
+  /* a semaphone indicate the page is ready to be loaded
+     from file system or swap */
   struct semaphore ready;
   void *vaddr;            /* the virtual address for this page */
   int swap_index;         /* swap slot for the page, -1 if in file system */
@@ -57,8 +58,8 @@ struct page
 };
 
 struct page is used to track pages for a process which are not in memory.
-All lazy loaded contend will be first add to the process' supplemental page
-table as a struct_page.
+All lazy loaded content will be first add to the process' supplemental page
+table as a struct page.
 
 ---- ALGORITHMS ----
 
@@ -68,8 +69,8 @@ table as a struct_page.
 If a page is not in memory, it will be in either the file system or the swap
 space. In struct page, swap_index indicates which swap slot the page is in.
 If it's -1 then the page is in file system, sturct fs_addr contains information
-necessary for locate the page: a pointer to the file structure and the offset
-for this page in the file.
+necessary for locate the page - a pointer to the file structure, the offset
+to start copying data into frame, and the number of bytes to be copied.
 
 >> A3: How does your code coordinate accessed and dirty bits between
 >> kernel and user virtual addresses that alias a single frame, or
@@ -93,7 +94,7 @@ protected by the frame table lock.
 This design store the minimum set of information to locate a page. Also we only
 keep the entry in the supplemental page table if the page is not in memory,
 either because it's newly loaded or evited. When the page is brought in we
-remove it from the table, in order to same memory. An alternation design would
+remove it from the table, in order to save memory. An alternation design would
 be let the supplemental page table to be a superset of page table.
 
            PAGING TO AND FROM DISK
@@ -135,7 +136,7 @@ choose the first not accessed page to evict.
 >> process Q, how do you adjust the page table (and any other data
 >> structures) to reflect the frame Q no longer has?
 
-Call pagedir_clear_page on process Q's page table and the page to evict, and
+Call pagedir_clear_page on process Q's page directory and the page to evict, and
 write the page to swap or file system.
 
 >> B4: Explain your heuristic for deciding whether a page fault for an
@@ -177,8 +178,8 @@ in this way Q cannot access the page.
 
 The frame table is protected by frame_lock so there won't be concurrency
 problem if both P and Q request a page simultaneously. But it doesn't prevent
-thrashing: P and Q keep on evicting and loading. A two level schedular which
-keep a proper working set can solve this problem.
+thrashing: P and Q keep on evicting and loading. A two level scheduler which
+keeps a proper working set can solve this problem.
 
 >> B7: Suppose a page fault in process P causes a page to be read from
 >> the file system or swap.  How do you ensure that a second process Q
