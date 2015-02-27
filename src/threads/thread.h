@@ -45,9 +45,9 @@ struct file_des
 struct mmap_info
 {
   mapid_t mapid;
-  struct file * file;
+  struct file * file;   /* The file mapped */
   void *start;          /* The starting virtual address */
-  size_t length;
+  size_t length;        /* Length of the file*/
   struct list_elem elem;
 };
 
@@ -124,17 +124,17 @@ struct thread
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
     pid_t pid;
+    int next_fd;
     struct list fd_list;
     struct list children;
     struct semaphore ready;             /* Successfully loaded. */
     struct semaphore to_exit;
     struct semaphore get_status;
     int exit_status;
-    int next_fd;
-    int next_mmap_id;
     struct file * file;
     struct hash pages;
     void * uesp;
+    int next_mmap_id;
     struct list mmap_list;
 #endif
 

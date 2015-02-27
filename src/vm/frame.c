@@ -18,10 +18,9 @@
 #define FRAME_SHIFT 12
 
 static void * frame_evict (void);
-static int clock_value = 0;
+static int clock_hand = 0;
 
-static struct mmap_info *
-get_mmap_info (struct thread *thread, void *uaddr);
+static struct mmap_info * get_mmap_info (struct thread *thread, void *uaddr);
 
 struct frame* frames;
 struct lock frame_lock;
@@ -53,13 +52,13 @@ frame_evict (void)
   lock_acquire (&frame_lock);
   while (true)
   {
-    clock_value = (clock_value + 1) % init_ram_pages; 
-    if (frames[clock_value].present == true
-        && frames[clock_value].pinned == false)
+    clock_hand = (clock_hand + 1) % init_ram_pages; 
+    if (frames[clock_hand].present == true
+        && frames[clock_hand].pinned == false)
       {
-        if (pagedir_is_accessed (frames[clock_value].thread->pagedir, frames[clock_value].uaddr))
+        if (pagedir_is_accessed (frames[clock_hand].thread->pagedir, frames[clock_hand].uaddr))
           {
-            pagedir_set_accessed (frames[clock_value].thread->pagedir, frames[clock_value].uaddr, false);
+            pagedir_set_accessed (frames[clock_hand].thread->pagedir, frames[clock_hand].uaddr, false);
             continue;
           }
         else
@@ -67,7 +66,7 @@ frame_evict (void)
       }
   }
 
-  int index = clock_value;
+  int index = clock_hand;
   frames[index].present = false;
   pagedir_clear_page (frames[index].thread->pagedir, frames[index].uaddr);
   
@@ -88,7 +87,7 @@ frame_evict (void)
         return NULL;
 
       // write back to file if the page is dirty
-      if (pagedir_is_dirty (frames[clock_value].thread->pagedir, frames[index].uaddr))
+      if (pagedir_is_dirty (frames[index].thread->pagedir, frames[index].uaddr))
         {
           lock_acquire (&fs_lock);
           ASSERT ((uint32_t)file_write_at (map_info->file, ptov(index << FRAME_SHIFT), faddr.length, faddr.ofs) == faddr.length);
