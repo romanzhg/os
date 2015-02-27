@@ -48,11 +48,17 @@ struct fs_addr
 
 struct page
 { 
+  /* a semaphone indicate the page is ready to be loaded from file system or swap */
+  struct semaphore ready;
   void *vaddr;            /* the virtual address for this page */
   int swap_index;         /* swap slot for the page, -1 if in file system */
   struct fs_addr faddr;   /* location for the page in file system */
   struct hash_elem hash_elem;          /* element for the hash table*/
 };
+
+struct page is used to track pages for a process which are not in memory.
+All lazy loaded contend will be first add to the process' supplemental page
+table as a struct_page.
 
 ---- ALGORITHMS ----
 
@@ -99,20 +105,47 @@ be let the supplemental page table to be a superset of page table.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+------ frame.h ------
 
+struct frame
+{
+  bool pinned;            /* Whether this frame should be locked in memory */
+  bool present;           /* Is this a pagable user frame */
+  void* uaddr;            /* The user virtual addredd mapped to this frame */
+  struct thread * thread; /* The owner of this frame */
+};
+
+struct frame* frames;
+An array of frames, with the size of init_ram_pages, indexed by physical
+page number.
+
+struct lock frame_lock;
+A lock to protect the frames array for concurrent access.
 
 ---- ALGORITHMS ----
 
 >> B2: When a frame is required but none is free, some frame must be
 >> evicted.  Describe your code for choosing a frame to evict.
 
+We implement the clock algorithm, an approximation for LRU. The clock hand
+swap and clear the access bit for each frame, as long as it's not pinned, then
+choose the first not accessed page to evict.
+
 >> B3: When a process P obtains a frame that was previously used by a
 >> process Q, how do you adjust the page table (and any other data
 >> structures) to reflect the frame Q no longer has?
 
+Call pagedir_clear_page on process Q's page table and the page to evict, and
+write the page to swap or file system.
+
 >> B4: Explain your heuristic for deciding whether a page fault for an
 >> invalid virtual address should cause the stack to be extended into
 >> the page that faulted.
+
+First, the faulting address should be within 8MB below PHYS_BASE, which is the
+limit for stack size. Second, the faulting address should not be more then
+32 bytes below the stack pointer, because the only two allowed way to grow the
+stack is PUSH and PUSHA, which subtract at most 32 bytes to the stack pointer.
 
 ---- SYNCHRONIZATION ----
 
@@ -121,21 +154,51 @@ be let the supplemental page table to be a superset of page table.
 >> textbook for an explanation of the necessary conditions for
 >> deadlock.)
 
+All visiable modification of the frame table and each thread's page table
+needs to go through the function frame_get(), So we use frame_lock to protect
+this function.
+
+A possible mutual dependent situation is thread A tries to write some file,
+it take the file system lock, and then the frame lock to bring in some page.
+Suppose thread B now preempt A and then fault to some address, it will fist
+take the frame lock and then try to acquire the file system lock to evict
+some page, now thread A and B dead locks. To prevent this situation, before
+a system call which can fault into some pages we make sure all the pages is
+in memory and cannot be evicted before this system call finish by "pin" the
+page in the frame table.
+
 >> B6: A page fault in process P can cause another process Q's frame
 >> to be evicted.  How do you ensure that Q cannot access or modify
 >> the page during the eviction process?  How do you avoid a race
 >> between P evicting Q's frame and Q faulting the page back in?
+
+We first mark the page as invalid in Q's page table then write the data out,
+in this way Q cannot access the page.
+
+The frame table is protected by frame_lock so there won't be concurrency
+problem if both P and Q request a page simultaneously. But it doesn't prevent
+thrashing: P and Q keep on evicting and loading. A two level schedular which
+keep a proper working set can solve this problem.
 
 >> B7: Suppose a page fault in process P causes a page to be read from
 >> the file system or swap.  How do you ensure that a second process Q
 >> cannot interfere by e.g. attempting to evict the frame while it is
 >> still being read in?
 
+There is a "present" bit for each frame. It's not set when we try to read
+the page from file system or swap, and only set when a process call
+pagedir_set_page. With the bit unset the frame won't be available for other
+processes.
+
 >> B8: Explain how you handle access to paged-out pages that occur
 >> during system calls.  Do you use page faults to bring in pages (as
 >> in user programs), or do you have a mechanism for "locking" frames
 >> into physical memory, or do you use some other design?  How do you
 >> gracefully handle attempted accesses to invalid virtual addresses?
+
+We lock the memory first before attempting to use them, because handling a
+page fault while accessing some memory may result in mutual dependent.
+Threads trying to access invalid address will exit with -1.
 
 ---- RATIONALE ----
 
@@ -146,6 +209,14 @@ be let the supplemental page table to be a superset of page table.
 >> where your design falls along this continuum and why you chose to
 >> design it this way.
 
+We use lock to ensure mutual exclusion for operations on frame table, for
+example evicting a page, but leave the I/O out of this lock to minimize the
+critical section. When process A evict a frame onwed by process B, it will
+first add an entry to process B's supplemental page table but set a semaphone
+in the entry to be 0 the leave the critical section. Process A will continue
+to write the page to disk. Process B will block on the semaphone even if it get
+the cpu, until A finish writing and call sema_up on it.
+
        MEMORY MAPPED FILES
        ===================
 
@@ -155,14 +226,42 @@ be let the supplemental page table to be a superset of page table.
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+------ thread.h ------
+struct mmap_info
+{
+  mapid_t mapid;
+  struct file * file;   /* The file mapped */
+  void *start;          /* The starting virtual address */
+  size_t length;        /* Length of the file*/
+  struct list_elem elem;
+};
+
+Members of struct thread:
+int next_mmap_id;
+
+struct list mmap_list;
+The list of mmap files for this thread/process.
+
 ---- ALGORITHMS ----
 
 >> C2: Describe how memory mapped files integrate into your virtual
 >> memory subsystem.  Explain how the page fault and eviction
 >> processes differ between swap pages and other pages.
 
+When a file is mmapped, we create entries in the supplemental page table with
+the location for that page in the file system, when the process is fault into
+the address it will be loaded from the file system.
+If a swap page is all zero it doesn't need to be read from the file system,
+for eviction a swap page always needs to be written to the swap. A memory
+mapped page don't needs to be written to disk if it's not modified, but it
+always need to be read from the disk when page fault.
+
 >> C3: Explain how you determine whether a new file mapping overlaps
 >> any existing segment.
+
+The virtual memory mapping is maintained in either the supplemental page table
+or the page table, we check each page to be mapped in these two tables to find
+possible overlap.
 
 ---- RATIONALE ----
 
@@ -172,6 +271,8 @@ be let the supplemental page table to be a superset of page table.
 >> that much of their implementation can be shared.  Explain why your
 >> implementation either does or does not share much of the code for
 >> the two situations.
+
+We share most of the code: the executable is loaded lazily as pages.
 
          SURVEY QUESTIONS
          ================

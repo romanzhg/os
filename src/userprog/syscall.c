@@ -459,26 +459,6 @@ pin_memory (const void *buffer, unsigned length)
           lock_release (&frame_lock);
         }
     }
-/*
-  int i = 0;
-  do
-    {
-      lock_acquire (&frame_lock);
-      void * kpage = pagedir_get_page (thread_current ()->pagedir, buffer + i * PGSIZE);
-      if (kpage == NULL)
-        {
-          lock_release (&frame_lock);
-          if (!page_fault_handler (&(thread_current ()->pages), buffer + i * PGSIZE, true))
-            return false;
-        }
-      else
-        {
-          frame_pin_memory (kpage);
-          lock_release (&frame_lock);
-        }
-      i++;
-    } while ((unsigned) i * PGSIZE < length);
-*/
   return true;
 }
 
@@ -494,15 +474,4 @@ unpin_memory (const void *buffer, unsigned length)
       ASSERT (kpage != NULL);
       frame_unpin_memory (kpage);
     }
-
-/*
-  int i = 0;
-  do
-    {
-      void * kpage = pagedir_get_page (thread_current ()->pagedir, buffer + i * PGSIZE);
-      ASSERT (kpage != NULL);
-      frame_unpin_memory (kpage);
-      i++;
-    } while ((unsigned) i * PGSIZE < length);
-*/
 }

@@ -24,8 +24,6 @@ static struct mmap_info *
 get_mmap_info (struct thread *thread, void *uaddr);
 
 struct frame* frames;
-
-// TODO: should obtain the lock when evicting pages/doing real io(?)
 struct lock frame_lock;
 
 void frame_init (void)

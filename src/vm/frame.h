@@ -4,22 +4,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-
 struct frame
 {
-  bool pinned;
-
-  // if needs to traversal the list may need to add a bool here
-  // to track if the frame can be put in page table
-  bool present;
-  // user virtual address correspond to this frame
-  // at the time of eviction, check on uaddr, if it belongs to a mmapped file
-  // put it back to disk and put the item to spt, if not put it to swap and
-  // put the item to spt -> frame_get() needs to modify the other thread's spt,
-  // should hold a lock for this
-  void* uaddr;
-
-  struct thread * thread;
+  bool pinned;            /* Whether this frame should be locked in memory */
+  bool present;           /* Is this a pagable user frame */
+  void* uaddr;            /* The user virtual addredd mapped to this frame */
+  struct thread * thread; /* The owner of this frame */
 };
 
 extern struct lock frame_lock;
