@@ -965,20 +965,22 @@ thread_munmap_all (void)
   lock_release (&frame_lock);
 }
 
-// Need to call this function with the frame_lock, otherwise the pagedir content for this process may chagne
+/* Remove all the pages from supplemental page table or real memory, write it
+   back to fs if needed.Need to call this function with the frame_lock,
+    otherwise the pagedir content for this process may chagne */
 static void
 release_mmap (struct mmap_info * mmap_info)
 {
-  // remove all the pages from supplemental page table or real memory, write it
-  // back to fs if needed
   int file_len = mmap_info->length;
   uint32_t ofs = 0;
   while (file_len > 0)
     {
       void * uaddr = mmap_info->start + ofs;
       uint32_t page_len = file_len < PGSIZE ? file_len : PGSIZE;
-      if (page_remove_mmap (&thread_current ()->pages, uaddr)) {}
-      else if (pagedir_remove (thread_current ()->pagedir, mmap_info, ofs, page_len)) {}
+      if (page_remove_mmap (&thread_current ()->pages, uaddr)
+          || pagedir_remove (thread_current ()->pagedir,
+                             mmap_info, ofs, page_len))
+        { /* Successfully removed the page. */}
       else
         PANIC ("the page should be in either memory or file system\n");
 
@@ -991,4 +993,5 @@ release_mmap (struct mmap_info * mmap_info)
   lock_release (&fs_lock);
   free (mmap_info);
 }
+
 #endif

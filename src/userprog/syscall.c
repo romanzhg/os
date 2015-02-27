@@ -438,18 +438,22 @@ pin_memory (const void *buffer, unsigned length)
   for (i = 0; (base_page + i * PGSIZE) <= end_page; i++)
     {
       lock_acquire (&frame_lock);
-      void * kpage = pagedir_get_page (thread_current ()->pagedir, base_page + i * PGSIZE);
+      void * kpage = pagedir_get_page (thread_current ()->pagedir,
+                                       base_page + i * PGSIZE);
       if (kpage == NULL)
         {
           lock_release (&frame_lock);
-          if (((uint32_t) PHYS_BASE - (uint32_t) (base_page + i * PGSIZE)) < (uint32_t) 0x800000)
+          if (((uint32_t) PHYS_BASE - (uint32_t) (base_page + i * PGSIZE))
+              < (uint32_t) STACK_LIMIT)
             {
-              if (!page_stack_growth_handler (&(thread_current ()->pages), base_page + i * PGSIZE, thread_current ()->uesp, true))
+              if (!page_stack_growth_handler (&thread_current ()->pages,
+                  base_page + i * PGSIZE, thread_current ()->uesp, true))
                 return false;
             }
           else
             {
-              if (!page_fault_handler (&(thread_current ()->pages), base_page + i * PGSIZE, true))
+              if (!page_fault_handler (&thread_current ()->pages,
+                  base_page + i * PGSIZE, true))
                 return false;
             }
         }
@@ -470,7 +474,8 @@ unpin_memory (const void *buffer, unsigned length)
   int i;
   for (i = 0; (base_page + i * PGSIZE) <= end_page; i++)
     {
-      void * kpage = pagedir_get_page (thread_current ()->pagedir, base_page + i * PGSIZE);
+      void * kpage = pagedir_get_page (thread_current ()->pagedir,
+          base_page + i * PGSIZE);
       ASSERT (kpage != NULL);
       frame_unpin_memory (kpage);
     }

@@ -152,10 +152,10 @@ page_fault (struct intr_frame *f)
   // handle page fault or stack growth
   if (not_present)
     {
-      // handle stack growth: if the faulted address is within one page below esp
-      // and the newly allocated page with 8MB below PHYBASE, then allocate a new
-      // page 
-      if (((uint32_t) PHYS_BASE - (uint32_t) fault_addr) < (uint32_t) 0x800000)
+      // if the faulted address is within 8MB below PHYBASE, then consider it
+      // an access to stack
+      if (((uint32_t) PHYS_BASE - (uint32_t) fault_addr)
+          < (uint32_t) STACK_LIMIT)
         {
           void * esp;
           if (user)
@@ -163,29 +163,18 @@ page_fault (struct intr_frame *f)
           else
             esp = thread_current ()->uesp;
 
-          if (page_stack_growth_handler (&thread_current ()->pages, fault_addr, esp, false))
+          if (page_stack_growth_handler (&thread_current ()->pages,
+                                         fault_addr, esp, false))
             return; 
-          else
-            {
-              thread_set_exit_status(-1);
-              thread_exit (); 
-            }
         }
       else
         {
-          if (page_fault_handler (&thread_current ()->pages, fault_addr, false))
+          if (page_fault_handler (&thread_current ()->pages,
+                                  fault_addr, false))
             return;
-          else
-            {
-              thread_set_exit_status(-1);
-              thread_exit ();
-            }
         }
     }
-  else
-    {
-      // writing to a read only page
-      thread_set_exit_status(-1);
-      thread_exit ();
-    }
+  // writing to a read only page or fallover from above
+  thread_set_exit_status(-1);
+  thread_exit ();
 }
