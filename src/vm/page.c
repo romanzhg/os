@@ -11,7 +11,7 @@
 #include <string.h>
 #include <stdio.h>
 
-static void page_read_from_fs (struct page * page, void * kpage);
+static void page_read_in (struct page * page, void * kpage);
 
 // when a process end, destory the supplimental page table and free all
 // the resources
@@ -113,29 +113,18 @@ bool
 page_fault_handler (struct hash * pages, void * vaddr)
 {
   struct page * page;
+
   // first check if the vaddr is valid by look it up in the hash table
-  // should kill the process instead of return false here
-  //printf("vaddr: %p\n", vaddr);
-  //printf("vaddr pg_no: %p\n",  pg_round_down(vaddr));
-  //print_pages (pages);
   if ((page = page_lookup (pages, pg_round_down(vaddr), true)) == NULL)
     return false;
   
   // get an empty frame from the frame table
   // TODO: what if the allocated kpage was evicted before we even install it?
-  // TODO: do we need to zero out the page?
   void * kpage = frame_get(0);
   if (kpage == NULL)
     return false;
 
-  // read data from the block
-  if (page->swap_index == -1)
-    page_read_from_fs (page, kpage);
-  else
-    {
-      swap_read (page->swap_index, kpage);
-      swap_free (page->swap_index);
-    }
+  page_read_in (page, kpage);
 
   bool rtn;
   // install the page
@@ -151,8 +140,15 @@ page_fault_handler (struct hash * pages, void * vaddr)
 }
 
 static void
-page_read_from_fs (struct page * page, void * kpage)
+page_read_in (struct page * page, void * kpage)
 {
+  // if the page is in swap space
+  if (page->swap_index != -1)
+    {
+      swap_read (page->swap_index, kpage);
+      swap_free (page->swap_index);
+      return;
+    }
   // if the page is all zero, don't need to read anything from disk
   if (page->faddr.zeroed)
     {
