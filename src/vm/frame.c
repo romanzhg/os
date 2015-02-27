@@ -16,28 +16,15 @@
 
 #define FRAME_SHIFT 12
 
-struct frame
-{
-  // TODO: need to implement memory pinning
-
-  // if needs to traversal the list may need to add a bool here
-  // to track if the frame can be put in page table
-  bool present;
-  // user virtual address correspond to this frame
-  // at the time of eviction, check on uaddr, if it belongs to a mmapped file
-  // put it back to disk and put the item to spt, if not put it to swap and 
-  // put the item to spt -> frame_get() needs to modify the other thread's spt,
-  // should hold a lock for this
-  void* uaddr;
-
-  struct thread * thread;
-};
-
 static void * frame_evict (void);
 static int clock_value = 0;
 
+static struct mmap_info *
+get_mmap_info (struct thread *thread, void *uaddr);
+
 struct frame* frames;
-// should obtain the lock when evicting pages/doing real io(?)
+
+// TODO: should obtain the lock when evicting pages/doing real io(?)
 struct lock frame_lock;
 
 void frame_init (void)
@@ -86,14 +73,35 @@ frame_evict (void)
   frames[index].present = false;
   pagedir_clear_page (frames[index].thread->pagedir, frames[index].uaddr);
   
-  // for now only consider evict to swap
-  int swap_index = swap_get ();
-  if (swap_index == -1)
-    return NULL;
+  struct mmap_info * map_info = get_mmap_info (frames[index].thread, frames[index].uaddr);
+  if (map_info != NULL)
+    {
+      struct fs_addr faddr;
+      faddr.file = map_info->file;
+      faddr.ofs = frames[index].uaddr - map_info->start;
+      faddr.length = pg_round_up(frames[index].uaddr) > (map_info->start + map_info->length) ?
+          map_info->length % PGSIZE : PGSIZE;
+      faddr.writable = true;
+      faddr.zeroed = false;
 
-  if (!page_add_swap (&(frames[index].thread->pages), frames[index].uaddr, swap_index))
-    return NULL;
-  swap_write (swap_index, ptov(index << FRAME_SHIFT));
+      if (!page_add_fs(&(frames[index].thread->pages), frames[index].uaddr, faddr))
+        return NULL;
+
+      // write back to file if the page is dirty
+      if (pagedir_is_dirty (frames[clock_value].thread->pagedir, frames[index].uaddr))
+        ASSERT ((uint32_t)file_write_at (map_info->file, ptov(index << FRAME_SHIFT), faddr.length, faddr.ofs) == faddr.length);
+    }
+  else
+    {
+      // write to swap space
+      int swap_index = swap_get ();
+      if (swap_index == -1)
+        return NULL;
+
+      if (!page_add_swap (&(frames[index].thread->pages), frames[index].uaddr, swap_index))
+        return NULL;
+      swap_write (swap_index, ptov(index << FRAME_SHIFT));
+    }
   
   return ptov(index << FRAME_SHIFT);
 }
@@ -117,4 +125,19 @@ void frame_set_mapping (void *upage, void *kpage, bool writable UNUSED)
   frames[index].thread = thread_current ();
   frames[index].uaddr = upage;
   frames[index].present = true;
+}
+
+static struct mmap_info *
+get_mmap_info (struct thread *thread, void *uaddr)
+{
+  struct list_elem *e;
+  for (e = list_begin (&thread->mmap_list); e != list_end (&thread->mmap_list);
+       e = list_next (e))
+    {
+      struct mmap_info * tmp = list_entry (e, struct mmap_info, elem);
+      if ((pg_round_down(tmp->start + tmp->length) >= uaddr)
+          && (pg_round_down(tmp->start) <= uaddr))
+        return tmp;
+    }
+  return NULL;
 }

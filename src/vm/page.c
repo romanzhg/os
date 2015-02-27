@@ -12,7 +12,6 @@
 #include <stdio.h>
 
 static void page_read_from_fs (struct page * page, void * kpage);
-static void print_pages (struct hash * pages);
 
 // when a process end, destory the supplimental page table and free all
 // the resources
@@ -162,7 +161,7 @@ page_read_from_fs (struct page * page, void * kpage)
     }
 
   file_seek (page->faddr.file, page->faddr.ofs);
-  ASSERT (file_read (page->faddr.file, kpage, page->faddr.length)
+  ASSERT ((uint32_t) file_read (page->faddr.file, kpage, page->faddr.length)
       == page->faddr.length);
   memset (kpage + page->faddr.length, 0, PGSIZE - page->faddr.length);
 }
@@ -210,17 +209,4 @@ page_destructor (struct hash_elem *e, void *aux UNUSED)
   if (page->swap_index != -1)
     swap_free (page->swap_index);
   free(page);
-}
-
-static void
-print_pages (struct hash * pages)
-{
-  struct hash_iterator i;
-
-  hash_first (&i, pages);
-  while (hash_next (&i))
-    {
-      struct page *p = hash_entry (hash_cur (&i), struct page, hash_elem);
-      printf ("page in hash table: %p", p->vaddr);
-    }
 }
