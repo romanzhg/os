@@ -12,12 +12,12 @@ struct swap
   bool available;
 };
 
-struct swap * swap_table;
-struct block * swap_space;
+struct swap *swap_table;
+struct block *swap_space;
 int swap_size;
 struct lock swap_lock;
 
-// open the block device swap, and organize it to page size slots
+/* Open the block device swap, and organize it to page size slots. */
 void
 swap_init (void)
 {
@@ -33,7 +33,7 @@ swap_init (void)
     swap_table[i].available = true;
 }
 
-// return the index of an empty swap slot, -1 if no swap is available
+/* Return the index of an empty swap slot, -1 if no swap is available. */
 int swap_get (void)
 {
   lock_acquire (&swap_lock);
@@ -49,7 +49,7 @@ int swap_get (void)
   PANIC ("Out of swap space");
 }
 
-// free the swap slot
+/* Free the swap slot. */
 void swap_free (int index)
 {
   lock_acquire (&swap_lock);
@@ -57,9 +57,9 @@ void swap_free (int index)
   lock_release (&swap_lock);
 }
 
-// copy PGSIZE bytes starting from source to the swap slot index
+/* Copy PGSIZE bytes starting from source to the swap slot index. */
 void
-swap_write (int index, void * source)
+swap_write (int index, void  source)
 {
   int base_sector = index * BLOCKS_PER_PAGE, i;
   for (i = 0; i < BLOCKS_PER_PAGE; i++)
@@ -67,9 +67,9 @@ swap_write (int index, void * source)
 }
 
 
-// copy PGSIZE bytes in swap slot index to dest
+/* Copy PGSIZE bytes in swap slot index to dest. */
 void
-swap_read (int index, void * dest)
+swap_read (int index, void *dest)
 {
   int base_sector = index * BLOCKS_PER_PAGE, i;
   for (i = 0; i < BLOCKS_PER_PAGE; i++)
