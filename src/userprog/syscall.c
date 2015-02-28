@@ -217,6 +217,8 @@ mmap (int fd, void *addr)
   lock_release (&frame_lock);
 
   off_t ofs = 0;
+  tmp_file_len = file_len;
+  void * original_addr = addr;
   while (file_len > 0)
     {
       size_t page_read_bytes = file_len < PGSIZE ? file_len : PGSIZE;
@@ -229,7 +231,19 @@ mmap (int fd, void *addr)
       faddr.zeroed = false;
 
       if (!page_add_fs (&thread_current ()->pages, addr, faddr, true))
-        return -1;
+        {
+          /* release previously allocated page entries */
+          while (tmp_file_len > 0)
+            {
+              size_t tmp_read_bytes = tmp_file_len < PGSIZE
+                  ? tmp_file_len : PGSIZE;
+              page_lookup (&thread_current ()->pages, original_addr, true);
+
+              original_addr += PGSIZE;
+              tmp_file_len -= tmp_read_bytes;
+            }
+          return -1;
+        }
 
       ofs += PGSIZE;
       file_len -= page_read_bytes;
