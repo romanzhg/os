@@ -148,6 +148,7 @@ void frame_set_mapping (void *upage, void *kpage, bool writable UNUSED)
   frames[index].thread = thread_current ();
   frames[index].uaddr = upage;
   frames[index].present = true;
+  frames[index].pinned = false;
 }
 
 void frame_pin_memory (void *kpage)
