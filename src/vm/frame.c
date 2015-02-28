@@ -18,12 +18,12 @@
 
 #define FRAME_SHIFT 12
 
-static void * frame_evict (void);
+static void *frame_evict (void);
 static int clock_hand = 0;
 
-static struct mmap_info * get_mmap_info (struct thread *thread, void *uaddr);
+static struct mmap_info *get_mmap_info (struct thread *thread, void *uaddr);
 
-struct frame* frames;
+struct frame *frames;
 struct lock frame_lock;
 
 void frame_init (void)
@@ -38,10 +38,10 @@ void frame_init (void)
     frames[i].pinned = false;
 }
 
-// Get a new page, return it's kernel virtual address. Return NULL if failed.
+/* Get a new page, return it's kernel virtual address. Return NULL if failed. */
 void *frame_get (int flags)
 {
-  void * rtn = palloc_get_page (flags | PAL_USER);
+  void *rtn = palloc_get_page (flags | PAL_USER);
   if (rtn == NULL) {
     rtn = frame_evict();
   }
@@ -72,11 +72,11 @@ frame_evict (void)
     }
 
   int index = clock_hand;
-  struct frame * to_evict = &frames[index];
+  struct frame *to_evict = &frames[index];
   to_evict->present = false;
   pagedir_clear_page (to_evict->thread->pagedir, to_evict->uaddr);
   
-  struct mmap_info * map_info = get_mmap_info (to_evict->thread,
+  struct mmap_info *map_info = get_mmap_info (to_evict->thread,
                                                to_evict->uaddr);
   if (map_info != NULL)
     {
@@ -89,7 +89,7 @@ frame_evict (void)
       faddr.writable = true;
       faddr.zeroed = false;
 
-      struct page * page = page_add_fs(&to_evict->thread->pages,
+      struct page *page = page_add_fs(&to_evict->thread->pages,
           to_evict->uaddr, faddr, false);
 
       intr_set_level (old_level);
@@ -97,7 +97,7 @@ frame_evict (void)
       if (page == NULL)
         return NULL;
 
-      // write back to file if the page is dirty
+      /* write back to file if the page is dirty */
       if (pagedir_is_dirty (to_evict->thread->pagedir, to_evict->uaddr))
         {
           lock_acquire (&fs_lock);
@@ -110,7 +110,7 @@ frame_evict (void)
     }
   else
     {
-      // write to swap space
+      /* write to swap space */
       int swap_index = swap_get ();
       if (swap_index == -1)
         return NULL;
@@ -130,7 +130,7 @@ frame_evict (void)
   return ptov(index << FRAME_SHIFT);
 }
 
-void frame_free (void * kpage)
+void frame_free (void *kpage)
 {
   uint32_t index = vtop (kpage) >> FRAME_SHIFT;
   frames[index].present = false;
@@ -138,8 +138,8 @@ void frame_free (void * kpage)
   palloc_free_page(kpage);
 }
 
-// when user tries to add an entry to the page table, update the frame
-// table also
+/* When user tries to add an entry to the page table, update the frame
+   table also. */
 void frame_set_mapping (void *upage, void *kpage, bool writable UNUSED)
 {
   uint32_t index = vtop (kpage) >> FRAME_SHIFT;
@@ -163,7 +163,7 @@ void frame_unpin_memory (void *kpage)
   frames[index].pinned = false;
 }
 
-// Decide if a page is backed by a memory mapped file
+/* Decide if a page is backed by a memory mapped file */
 static struct mmap_info *
 get_mmap_info (struct thread *thread, void *uaddr)
 {
