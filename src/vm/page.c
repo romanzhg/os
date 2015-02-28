@@ -46,7 +46,7 @@ struct page *
 page_add_swap (struct hash * pages, void * vaddr,
                int index, bool ready)
 {
-  struct page * page = malloc (sizeof (struct page));
+  struct page *page = malloc (sizeof (struct page));
   if (page == NULL)
     return NULL;
 
@@ -65,7 +65,7 @@ page_add_swap (struct hash * pages, void * vaddr,
 struct page *
 page_add_fs (struct hash * pages, void * vaddr, struct fs_addr faddr, bool ready)
 {
-  struct page * page = malloc (sizeof (struct page));
+  struct page *page = malloc (sizeof (struct page));
   if (page == NULL)
     return NULL;
 
@@ -84,7 +84,7 @@ page_add_fs (struct hash * pages, void * vaddr, struct fs_addr faddr, bool ready
 
 /* valid stack vaddr: (vaddr >= esp) or (esp - vaddr <= 32). */
 bool
-page_stack_growth_handler (struct hash * pages, void * vaddr, void * esp, bool pin_memory)
+page_stack_growth_handler (struct hash *pages, void *vaddr, void *esp, bool pin_memory)
 {
   void *kpage;
   if ((uint32_t) vaddr >= (uint32_t) esp)
@@ -94,7 +94,7 @@ page_stack_growth_handler (struct hash * pages, void * vaddr, void * esp, bool p
         return false;
 
       frame_pin_memory (kpage);
-      struct page * page;
+      struct page *page;
       if ((page = page_lookup (pages, pg_round_down(vaddr), true)) != NULL)
         {
           // wait for a maybe evicted page to be written to swap
@@ -132,19 +132,19 @@ page_stack_growth_handler (struct hash * pages, void * vaddr, void * esp, bool p
 /* put vaddr to a frame and page table, also remove the mapping from
    supplemental page table. */
 bool
-page_fault_handler (struct hash * pages, const void * vaddr, bool pin_memory)
+page_fault_handler (struct hash *pages, const void *vaddr, bool pin_memory)
 {
-  struct page * page;
+  struct page *page;
 
-  // first check if the vaddr is valid by look it up in the hash table
+  /* first check if the vaddr is valid by look it up in the hash table */
   if ((page = page_lookup (pages, pg_round_down(vaddr), true)) == NULL)
     return false;
   
   // wait for a maybe evicted page to be written to swap
   sema_down (&page->ready);
 
-  // get an empty frame from the frame table
-  void * kpage = frame_get(0);
+  /* get an empty frame from the frame table */
+  void *kpage = frame_get(0);
   if (kpage == NULL)
     return false;
 
@@ -154,7 +154,7 @@ page_fault_handler (struct hash * pages, const void * vaddr, bool pin_memory)
     frame_unpin_memory (kpage);
 
   bool rtn;
-  // install the page
+  /* install the page */
   if (page->swap_index == -1)
     rtn = pagedir_set_page (thread_current ()->pagedir,
                             pg_round_down(vaddr), kpage, page->faddr.writable);
@@ -167,9 +167,9 @@ page_fault_handler (struct hash * pages, const void * vaddr, bool pin_memory)
 }
 
 static void
-page_read_in (struct page * page, void * kpage)
+page_read_in (struct page *page, void *kpage)
 {
-  // if the page is in swap space
+  /* Load the page from swap space. */
   if (page->swap_index != -1)
     {
       swap_read (page->swap_index, kpage);
@@ -177,7 +177,7 @@ page_read_in (struct page * page, void * kpage)
       return;
     }
 
-  // if the page is all zero, don't need to read anything from disk
+  /* if the page is all zero, don't need to read anything from disk */
   if (page->faddr.zeroed)
     {
       memset (kpage, 0, PGSIZE);
@@ -192,12 +192,12 @@ page_read_in (struct page * page, void * kpage)
 
 /* Lookup a page and remove it from the hash table optionally. */
 struct page *
-page_lookup (struct hash * pages, void *vaddr, bool to_delete)
+page_lookup (struct hash *pages, void *vaddr, bool to_delete)
 {
   struct page p;
   struct hash_elem *e;
 
-  // deny access to kernel vitual address
+  /* deny access to kernel vitual address */
   if (!is_user_vaddr (vaddr))
     return NULL;
 
