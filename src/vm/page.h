@@ -12,7 +12,7 @@
 
 struct fs_addr
 {
-  struct file * file;     /* the mmapped file */
+  struct file *file;     /* the mmapped file */
   off_t ofs;              /* the offset for this page in the mmapped file */
   size_t length;          /* valid bytes for the page */
   bool writable;          /* is this file writable */
@@ -35,13 +35,13 @@ struct page *page_add_fs (struct hash *pages, void *vaddr,
                           struct fs_addr addr, bool ready);
 struct page *page_add_swap (struct hash *pages, void *vaddr,
                             int index, bool ready);
-void page_destory (struct hash * pages);
+void page_destory (struct hash *pages);
 bool page_fault_handler (struct hash *pages, const void *vaddr,
                          bool pin_memory);
-bool page_stack_growth_handler (struct hash * pages, void * vaddr, void * esp,
+bool page_stack_growth_handler (struct hash *pages, void *vaddr, void *esp,
                                 bool pin_memory);
-bool page_remove_mmap (struct hash * pages, void *vaddr);
-struct page * page_lookup (struct hash * pages, void *vaddr, bool to_delete);
+bool page_remove_mmap (struct hash *pages, void *vaddr);
+struct page *page_lookup (struct hash *pages, void *vaddr, bool to_delete);
 
 unsigned page_hash (const struct hash_elem *p_, void *aux UNUSED);
 bool page_less (const struct hash_elem *a_, const struct hash_elem *b_,
