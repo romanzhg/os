@@ -778,9 +778,9 @@ uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
 #ifdef USERPROG
 int
-thread_open_file(struct file * f)
+thread_open_file(struct file *f)
 {
-  struct file_des * file_des = malloc (sizeof (struct file_des));
+  struct file_des *file_des = malloc (sizeof (struct file_des));
   if (file_des == NULL)
     return -1;
   file_des->file = f;
@@ -796,9 +796,9 @@ thread_open_file(struct file * f)
 void
 thread_close_file(int fd)
 {
-  struct file * file = NULL;
+  struct file *file = NULL;
   enum intr_level old_level = intr_disable ();
-  struct list * fd_list = &thread_current()->fd_list;
+  struct list *fd_list = &thread_current()->fd_list;
   struct list_elem *e;
   for (e = list_begin (fd_list); e != list_end (fd_list); e = list_next (e))
     {
@@ -818,7 +818,7 @@ thread_close_file(int fd)
 struct file *
 thread_lookup_fd (int fd)
 {
-  struct file * rtn = NULL;
+  struct file *rtn = NULL;
 
   enum intr_level old_level = intr_disable ();
   struct list * fd_list = &thread_current()->fd_list;
@@ -934,7 +934,7 @@ thread_munmap (mapid_t mapping)
   for (e = list_begin (&thread_current ()->mmap_list);
        e != list_end (&thread_current()-> mmap_list); e = list_next (e))
     {
-      struct mmap_info * tmp = list_entry (e, struct mmap_info, elem);
+      struct mmap_info *tmp = list_entry (e, struct mmap_info, elem);
       if (tmp->mapid == mapping)
         {
           mmap_info = tmp;
@@ -958,7 +958,7 @@ thread_munmap_all (void)
   for (e = list_begin (&thread_current ()->mmap_list);
        e != list_end (&thread_current ()->mmap_list);)
     {
-      struct mmap_info * tmp = list_entry (e, struct mmap_info, elem);
+      struct mmap_info *tmp = list_entry (e, struct mmap_info, elem);
       e = list_remove(e);
       lock_acquire (&frame_lock);
       release_mmap (tmp);
@@ -970,7 +970,7 @@ thread_munmap_all (void)
    back to fs if needed.Need to call this function with the frame_lock,
    otherwise the pagedir content for this process may chagne */
 static void
-release_mmap (struct mmap_info * mmap_info)
+release_mmap (struct mmap_info *mmap_info)
 {
   int file_len = mmap_info->length;
   uint32_t ofs = 0;

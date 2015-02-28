@@ -59,7 +59,7 @@ void swap_free (int index)
 
 /* Copy PGSIZE bytes starting from source to the swap slot index. */
 void
-swap_write (int index, void  source)
+swap_write (int index, void *source)
 {
   int base_sector = index * BLOCKS_PER_PAGE, i;
   for (i = 0; i < BLOCKS_PER_PAGE; i++)
