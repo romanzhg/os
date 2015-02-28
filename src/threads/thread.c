@@ -427,7 +427,6 @@ thread_exit (void)
 
 #ifdef USERPROG
   thread_munmap_all ();
-  page_destory (&thread_current () -> pages);
 
   enum intr_level old_level = intr_disable ();
   struct thread *current = thread_current ();
@@ -731,6 +730,7 @@ thread_schedule_tail (struct thread *prev)
   if (prev != NULL && prev->status == THREAD_DYING && prev != initial_thread) 
     {
       ASSERT (prev != cur);
+      page_destory (&prev->pages);
       palloc_free_page (prev);
     }
 }
