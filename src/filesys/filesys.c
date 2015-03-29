@@ -2,6 +2,7 @@
 #include <debug.h>
 #include <stdio.h>
 #include <string.h>
+#include "filesys/cache.h"
 #include "filesys/file.h"
 #include "filesys/free-map.h"
 #include "filesys/inode.h"
@@ -36,6 +37,7 @@ void
 filesys_done (void) 
 {
   free_map_close ();
+  cache_close ();
 }
 
 /* Creates a file named NAME with the given INITIAL_SIZE.
