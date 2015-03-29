@@ -6,6 +6,7 @@
 #include "devices/block.h"
 #include "threads/malloc.h"
 #include "threads/synch.h"
+#include "threads/thread.h"
 
 #define CACHE_SIZE 64
 
@@ -13,22 +14,47 @@ static struct lock cache_lock;
 struct cache_entry * cache;
 static int clock_hand;
 struct block *block_fs;
+static bool cache_on;
 
 static int allocate_cache (block_sector_t sector);
 static void write (int i, off_t off, const void *buffer, int32_t length);
 static void read (int i, off_t off, void *buffer, int32_t length);
+static void cache_flush (void * aux);
 
 void cache_close (void)
 {
+  cache_on = false;
   int i;
   for (i = 0; i < CACHE_SIZE; i++)
     {
-      if (cache[i].available == false) {
-        ASSERT (cache[i].new_sec != 0xFFFFFFFF);
-        //printf ("actually write to sector: %d\n", cache[i].new_sec);
+      if (cache[i].available == false && cache[i].dirty == true) {
         block_write (block_fs, cache[i].new_sec, cache[i].data);
       }
     }
+}
+
+static void cache_flush (void * aux UNUSED) {
+  
+  int i;
+  while (cache_on) {
+    for (i = 0; i < CACHE_SIZE; i++) {
+      lock_acquire (&cache_lock);
+      if (!cache[i].available && cache[i].dirty && (cache[i].old_sec == cache[i].new_sec))
+      {
+        lock_acquire (&cache[i].entry_lock);
+        cache[i].dirty = false;
+        lock_release (&cache_lock);
+        while (cache[i].reference != 0)
+          cond_wait(&cache[i].cache_ref, &cache[i].entry_lock);
+
+        block_write (block_fs, cache[i].new_sec, cache[i].data);
+        lock_release (&cache[i].entry_lock);
+      }
+      lock_release (&cache_lock);
+    }
+    // flush the cache every 10 seconds
+    timer_sleep (10 * TIMER_FREQ);
+  }
 }
 
 void cache_init(void)
@@ -37,6 +63,7 @@ void cache_init(void)
   block_fs = block_get_role (BLOCK_FILESYS);
   cache = malloc (CACHE_SIZE * sizeof (struct cache_entry));
   clock_hand = 0;
+  cache_on = true;
 
   int i;
   for (i = 0; i < CACHE_SIZE; i++)
@@ -50,6 +77,7 @@ void cache_init(void)
       lock_init (&cache[i].entry_lock);
       cond_init (&cache[i].cache_ref);
     }
+  thread_create ("cache_flush", PRI_DEFAULT, cache_flush, NULL);
 }
 
 // take a sector number and return the index in cache table which contains
@@ -78,6 +106,7 @@ allocate_cache (block_sector_t sector) {
   // no cache entry available, going to evict a random one
   clock_hand = 10;
   cache[clock_hand].new_sec = sector;
+  bool write_back = cache[clock_hand].dirty;
   lock_release (&cache_lock);
 
   // wait for the reference count to be zero
@@ -87,16 +116,21 @@ allocate_cache (block_sector_t sector) {
   lock_release (&cache[clock_hand].entry_lock);
 
   // TODO: do not need to write if it's not dirty
-  block_write (block_fs, cache[clock_hand].old_sec, cache[clock_hand].data);
+  if (write_back)
+    block_write (block_fs, cache[clock_hand].old_sec, cache[clock_hand].data);
   block_read (block_fs, cache[clock_hand].new_sec, cache[clock_hand].data);
   
   lock_acquire (&cache_lock);
+  cache[clock_hand].dirty = false;
+  cache[clock_hand].accessed = false;
   cache[clock_hand].old_sec = sector;
-  cond_broadcast (&cache[i].cache_ready, &cache_lock);
+  cond_broadcast (&cache[clock_hand].cache_ready, &cache_lock);
   return clock_hand;
 }
 
 static void write (int i, off_t off, const void *buffer, int32_t length) {
+  cache[i].accessed = true;
+  cache[i].dirty = true;
   lock_acquire (&cache[i].entry_lock);
   lock_release (&cache_lock);
   cache[i].reference++;
@@ -111,6 +145,7 @@ static void write (int i, off_t off, const void *buffer, int32_t length) {
 }
 
 static void read (int i, off_t off, void *buffer, int32_t length) {
+  cache[i].accessed = true;
   lock_acquire (&cache[i].entry_lock);
   lock_release (&cache_lock);
   cache[i].reference++;
@@ -201,7 +236,6 @@ cache_read (block_sector_t sector, off_t off, void *buffer, int32_t length) {
   // entry for the sector
   // when exit this function cache_lock is released
   i = allocate_cache (sector);
-
   read (i, off, buffer, length);
   return length;
 }
