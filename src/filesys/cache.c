@@ -6,6 +6,7 @@
 #include "devices/block.h"
 #include "threads/malloc.h"
 #include "threads/synch.h"
+#include "devices/timer.h"
 #include "threads/thread.h"
 
 #define CACHE_SIZE 64
@@ -37,6 +38,8 @@ static void cache_flush (void * aux UNUSED) {
   
   int i;
   while (cache_on) {
+    // flush the cache every 10 seconds
+    timer_sleep (10 * TIMER_FREQ);
     for (i = 0; i < CACHE_SIZE; i++) {
       lock_acquire (&cache_lock);
       if (!cache[i].available && cache[i].dirty && (cache[i].old_sec == cache[i].new_sec))
@@ -52,8 +55,6 @@ static void cache_flush (void * aux UNUSED) {
       }
       lock_release (&cache_lock);
     }
-    // flush the cache every 10 seconds
-    timer_sleep (10 * TIMER_FREQ);
   }
 }
 
