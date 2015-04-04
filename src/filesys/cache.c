@@ -35,7 +35,6 @@ void cache_close (void)
 }
 
 static void cache_flush (void * aux UNUSED) {
-  
   int i;
   while (cache_on) {
     // flush the cache every 10 seconds

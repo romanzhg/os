@@ -4,6 +4,7 @@
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
+#include <stdio.h>
 
 static struct file *free_map_file;   /* Free map file. */
 static struct bitmap *free_map;      /* Free map, one bit per sector. */
@@ -33,6 +34,24 @@ free_map_allocate (size_t cnt, block_sector_t *sectorp)
       && !bitmap_write (free_map, free_map_file))
     {
       bitmap_set_multiple (free_map, sector, cnt, false); 
+      sector = BITMAP_ERROR;
+    }
+  if (sector != BITMAP_ERROR)
+    *sectorp = sector;
+  return sector != BITMAP_ERROR;
+}
+
+/* Allocate a block and put the block number to sectorp. 
+   Return false if failed. */
+bool
+free_map_get (block_sector_t * sectorp)
+{
+  block_sector_t sector = bitmap_scan_and_flip (free_map, 0, 1, false);
+  if (sector != BITMAP_ERROR
+      && free_map_file != NULL
+      && !bitmap_write (free_map, free_map_file))
+    {
+      bitmap_set_multiple (free_map, sector, 1, false); 
       sector = BITMAP_ERROR;
     }
   if (sector != BITMAP_ERROR)
@@ -76,10 +95,13 @@ free_map_create (void)
   if (!inode_create (FREE_MAP_SECTOR, bitmap_file_size (free_map)))
     PANIC ("free map creation failed");
 
+  printf ("finished creating a zeroed block in the freemap.\n");
   /* Write bitmap to file. */
   free_map_file = file_open (inode_open (FREE_MAP_SECTOR));
+  printf ("finished open freemap file\n");
   if (free_map_file == NULL)
     PANIC ("can't open free map");
   if (!bitmap_write (free_map, free_map_file))
     PANIC ("can't write free map");
+  printf ("finished writing freemap file\n");
 }
