@@ -18,7 +18,7 @@ struct inode_disk
   {
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
-    block_sector_t blocks[124];               /* Not used. */
+    block_sector_t blocks[124];
     block_sector_t first_indirect;
     block_sector_t second_indirect;
   };
@@ -37,7 +37,7 @@ bytes_to_sectors (off_t size)
 }
 
 /* A method help to walk through the double indirect inode disk structure. */
-static block_sector_t *
+static block_sector_t
 inode_get_sector (const struct inode *inode, int index);
 
 /* In-memory inode. */
@@ -61,7 +61,7 @@ byte_to_sector (const struct inode *inode, off_t pos)
 {
   ASSERT (inode != NULL);
   if (pos < inode->data.length)
-    return *inode_get_sector (inode, bytes_to_sectors(pos));
+    return inode_get_sector (inode, bytes_to_sectors(pos));
   else
     return -1;
 }
@@ -96,6 +96,9 @@ inode_create (block_sector_t sector, off_t length)
   ASSERT (sizeof *disk_inode == BLOCK_SECTOR_SIZE);
 
   printf ("create inode for length: %d\n", length);
+  if (length > 124 * 512)
+    PANIC("file size too large");
+
   disk_inode = calloc (1, sizeof *disk_inode);
   if (disk_inode != NULL)
     {
@@ -103,24 +106,22 @@ inode_create (block_sector_t sector, off_t length)
       size_t sectors = bytes_to_sectors (length);
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
-      printf ("length transfered to sectors: %d\n", sectors);
       ASSERT(sectors < 124);
-      size_t i;
-      for (i = 0; i < sectors; i++)
+
+      bool rtn = free_map_allocate_mul (disk_inode->blocks, sectors);
+      if (rtn)
         {
-          bool rtn = free_map_get (&disk_inode->blocks[i]);
-          if (rtn)
+          size_t i;
+          for (i = 0; i< sectors; i++)
             {
-              printf ("going to write to block: %d\n", disk_inode->blocks[i]);
-              cache_write(disk_inode->blocks[i], 0, zeros, BLOCK_SECTOR_SIZE);
-            }
-          else
-            {
-              free (disk_inode);
-              return success;
+              cache_write (disk_inode->blocks[i], 0, zeros, BLOCK_SECTOR_SIZE);
             }
         }
-      printf ("sector for this inode: %d\n", sector);
+      else
+        {
+          free (disk_inode);
+          return success;
+        }
       cache_write (sector, 0, disk_inode, BLOCK_SECTOR_SIZE);
       free (disk_inode);
       success = true;
@@ -137,6 +138,7 @@ inode_open (block_sector_t sector)
   struct list_elem *e;
   struct inode *inode;
 
+  // TODO: should the open_inodes be protected by some lock?
   /* Check whether this inode is already open. */
   for (e = list_begin (&open_inodes); e != list_end (&open_inodes);
        e = list_next (e)) 
@@ -160,7 +162,6 @@ inode_open (block_sector_t sector)
   inode->open_cnt = 1;
   inode->deny_write_cnt = 0;
   inode->removed = false;
-  //block_read (fs_device, inode->sector, &inode->data);
   cache_read(inode->sector, 0, &inode->data, BLOCK_SECTOR_SIZE);
   return inode;
 }
@@ -202,11 +203,7 @@ inode_close (struct inode *inode)
         {
           free_map_release (inode->sector, 1);
           int sectors = bytes_to_sectors (inode->data.length);
-          int i;
-          for (i = 0; i < sectors; i++)
-            {
-              free_map_release (*inode_get_sector (inode, i), 1);
-            }
+          free_map_release_mul (inode->data.blocks, sectors);
         }
       free (inode); 
     }
@@ -346,12 +343,11 @@ inode_length (const struct inode *inode)
 }
 
 /* Given the sector index in inode, return the block sector on disk. */
-static block_sector_t *
+static block_sector_t
 inode_get_sector (const struct inode *inode, int index)
 {
   if (index >= 124) {
-    ASSERT(false);
-    return NULL;
+    PANIC ("no more than 124 blocks");
   }
-  return &(inode->data.blocks[index]);
+  return inode->data.blocks[index];
 }

@@ -44,19 +44,28 @@ free_map_allocate (size_t cnt, block_sector_t *sectorp)
 /* Allocate a block and put the block number to sectorp. 
    Return false if failed. */
 bool
-free_map_get (block_sector_t * sectorp)
+free_map_allocate_mul (block_sector_t * sectorp, size_t ctn)
 {
-  block_sector_t sector = bitmap_scan_and_flip (free_map, 0, 1, false);
-  if (sector != BITMAP_ERROR
-      && free_map_file != NULL
-      && !bitmap_write (free_map, free_map_file))
-    {
-      bitmap_set_multiple (free_map, sector, 1, false); 
-      sector = BITMAP_ERROR;
-    }
-  if (sector != BITMAP_ERROR)
-    *sectorp = sector;
-  return sector != BITMAP_ERROR;
+  size_t i;
+  for (i = 0; i < ctn; i++)
+  {
+    if (!free_map_allocate (1, &sectorp[i]))
+      {
+        free_map_release_mul (sectorp, i);
+        return false;
+      }
+  }
+  return true;
+}
+
+void
+free_map_release_mul (block_sector_t * sectorp, size_t ctn)
+{
+  size_t i;
+  for (i = 0; i < ctn; i++)
+  {
+    free_map_release(sectorp[i], 1);
+  }
 }
 
 /* Makes CNT sectors starting at SECTOR available for use. */
