@@ -128,6 +128,7 @@ static void read (int i, off_t off, void *buffer, int32_t length) {
   cache[i].reference++;
   lock_release (&cache[i].entry_lock);
   
+  //printf ("actual cache entry served the read is %d\n", i);
   memcpy(buffer, cache[i].data + off, length);
 
   lock_acquire (&cache[i].entry_lock);
@@ -138,6 +139,7 @@ static void read (int i, off_t off, void *buffer, int32_t length) {
 
 int32_t
 cache_write (block_sector_t sector, off_t off, const void *buffer, int32_t length) {
+  //printf ("going to write to sector: %d\n", sector);
   int i;
   lock_acquire (&cache_lock);
   loop_start_write:
@@ -179,6 +181,7 @@ cache_write (block_sector_t sector, off_t off, const void *buffer, int32_t lengt
 
 int32_t
 cache_read (block_sector_t sector, off_t off, void *buffer, int32_t length) {
+  //printf ("going to read from sector: %d\n", sector);
   int i;
   lock_acquire (&cache_lock);
   loop_start_read:

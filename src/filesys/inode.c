@@ -16,11 +16,16 @@
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_disk
   {
-    block_sector_t start;               /* First data sector. */
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
-    uint32_t unused[125];               /* Not used. */
+    block_sector_t blocks[124];
+    block_sector_t first_indirect;
+    block_sector_t second_indirect;
+
   };
+
+static block_sector_t
+inode_get_index (const struct inode_disk *node, size_t index);
 
 /* Returns the number of sectors to allocate for an inode SIZE
    bytes long. */
@@ -50,9 +55,17 @@ byte_to_sector (const struct inode *inode, off_t pos)
 {
   ASSERT (inode != NULL);
   if (pos < inode->data.length)
-    return inode->data.start + pos / BLOCK_SECTOR_SIZE;
+    return inode_get_index(&inode->data, pos / BLOCK_SECTOR_SIZE);
   else
     return -1;
+}
+
+static block_sector_t
+inode_get_index (const struct inode_disk *node, size_t index)
+{
+  if (index > 124)
+    PANIC ("size too large");
+  return node->blocks[index];
 }
 
 /* List of open inodes, so that opening a single inode twice
@@ -75,6 +88,7 @@ inode_init (void)
 bool
 inode_create (block_sector_t sector, off_t length)
 {
+  static char zeros[BLOCK_SECTOR_SIZE];
   struct inode_disk *disk_inode = NULL;
   bool success = false;
 
@@ -90,19 +104,16 @@ inode_create (block_sector_t sector, off_t length)
       size_t sectors = bytes_to_sectors (length);
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
-      if (free_map_allocate (sectors, &disk_inode->start)) 
+      // allocate space in freemap and zero them.
+      if (free_map_allocate_mul (disk_inode->blocks, sectors))
         {
           cache_write (sector, 0, disk_inode, BLOCK_SECTOR_SIZE);
-          if (sectors > 0) 
-            {
-              static char zeros[BLOCK_SECTOR_SIZE];
-              size_t i;
-              
-              for (i = 0; i < sectors; i++) 
-                cache_write (disk_inode->start + i, 0, zeros, BLOCK_SECTOR_SIZE);
-            }
+
+          size_t i;
+          for (i = 0; i < sectors; i++) 
+            cache_write (disk_inode->blocks[i], 0, zeros, BLOCK_SECTOR_SIZE);
           success = true; 
-        } 
+        }
       free (disk_inode);
     }
   return success;
@@ -180,8 +191,8 @@ inode_close (struct inode *inode)
       if (inode->removed) 
         {
           free_map_release (inode->sector, 1);
-          free_map_release (inode->data.start,
-                            bytes_to_sectors (inode->data.length)); 
+          free_map_release_mul(inode->data.blocks,
+              bytes_to_sectors (inode->data.length));
         }
 
       free (inode); 

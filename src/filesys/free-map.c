@@ -1,4 +1,5 @@
 #include "filesys/free-map.h"
+#include <stdio.h>
 #include <bitmap.h>
 #include <debug.h>
 #include "filesys/file.h"
@@ -82,4 +83,31 @@ free_map_create (void)
     PANIC ("can't open free map");
   if (!bitmap_write (free_map, free_map_file))
     PANIC ("can't write free map");
+}
+
+/* Allocate a block and put the block number to sectorp. 
+   Return false if failed. */
+bool
+free_map_allocate_mul (block_sector_t * sectorp, size_t ctn)
+{
+  size_t i;
+  for (i = 0; i < ctn; i++)
+  {
+    if (!free_map_allocate (1, &sectorp[i]))
+      {
+        free_map_release_mul (sectorp, i);
+        return false;
+      }
+  }
+  return true;
+}
+
+void
+free_map_release_mul (block_sector_t * sectorp, size_t ctn)
+{
+  size_t i;
+  for (i = 0; i < ctn; i++)
+  {
+    free_map_release(sectorp[i], 1);
+  }
 }
