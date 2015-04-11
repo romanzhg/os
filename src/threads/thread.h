@@ -121,6 +121,7 @@ struct thread
     int exit_status;
     int next_fd;
     struct file * file;
+    char cur_dir[256];
 #endif
 
     /* Owned by thread.c. */
