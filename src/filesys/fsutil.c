@@ -15,7 +15,7 @@
 void
 fsutil_ls (char **argv UNUSED) 
 {
-  struct dir *dir;
+  struct file *dir;
   char name[NAME_MAX + 1];
   
   printf ("Files in the root directory:\n");
